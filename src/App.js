@@ -39,6 +39,19 @@ import Transfer from "./components/Admin/Transfer/Transfer";
 import TransferItems from "./components/Admin/TransferItems/TransferItems";
 import InventoryCost from "./components/Admin/Costing/InventoryCost";
 import HelpFAQ from "./components/Admin/Batches/HelpFAQ/HelpFAQ";
+import UnitOfMeasurement from "./components/Admin/UnitOfMeasurement/UnitOfMeasurement";
+import Vendors from "./components/Admin/Vendors/Vendors";
+import PurchaseOrders from "./components/Admin/PurchaseOrder/PurchaseOrders";
+import GoodsReceipts from "./components/Admin/GoodsReceipts/GoodsReceipts";
+import UomConversion from "./components/Admin/UomConversion/UomConversion";
+import Employees from "./components/Admin/Employees/Employees";
+import ChangePassword from "./pages/Account/ChangePassword";
+import InventoryStatus from "./components/Admin/InventoryStatuses/InventoryStatus";
+import SellingPriceHistories from "./components/Admin/SellingPriceHistories/SellingPriceHistories";
+import PurchasePriceHistories from "./components/Admin/PurchasePriceHistories/PurchasePriceHistories";
+import SalesQuotations from "./components/Admin/SalesQuotations/SalesQuotations";
+import SalesOrders from "./components/Admin/SalesOrders/SalesOrders";
+import DeliveryOrders from "./components/Admin/DeliveryOrders/DeliveryOrders";
 
 const App = () => {
   const router = createBrowserRouter(
@@ -48,22 +61,36 @@ const App = () => {
         <Route path="/signup" element={<SignUp />} />
         <Route path="/signin" element={<SignIn />} />
         <Route path="/reset" element={<Reset />} />
-
-        {/* Protected Admin Route with Nested Routes */}
+        <Route path="/change-password" element={<ChangePassword />} />
         <Route path="/admin" element={<Admin />}>
-          <Route index element={<Navigate to="dashboard" />} />{" "}
-          {/* Default admin page */}
+          <Route index element={<Navigate to="dashboard" />} />
           <Route path="dashboard" element={<Dashboard />} />
-          <Route path="users" element={<UsersComponent />} />{" "}
-          {/* Use the renamed component */}
+          <Route path="users" element={<UsersComponent />} />
+          <Route path="employees" element={<Employees />} />
+          <Route path="InventoryStatus" element={<InventoryStatus />} />
+          <Route path="SalesOrders" element={<SalesOrders />} />
+          <Route
+            path="SellingPriceHistories"
+            element={<SellingPriceHistories />}
+          />
+          <Route
+            path="PurchasePriceHistories"
+            element={<PurchasePriceHistories />}
+          />
+          <Route path="DeliveryOrders" element={<DeliveryOrders />} />
+          <Route path="SalesQuotations" element={<SalesQuotations />} />
+          <Route path="UnitOfMeasurement" element={<UnitOfMeasurement />} />
+          <Route path="UomConversion" element={<UomConversion />} />
+          <Route path="PurchaseOrders" element={<PurchaseOrders />} />
+          <Route path="GoodsReceipts" element={<GoodsReceipts />} />
           <Route path="categories" element={<Categories />} />
           <Route path="categories2" element={<AllCategoriesTwo />} />
           <Route path="categories3" element={<CategoriesThree />} />
           <Route path="categories4" element={<CategoriesFour />} />
           <Route path="categories5" element={<CategoriesFive />} />
+          <Route path="vendors" element={<Vendors />} />
           <Route path="brands" element={<Brands />} />
-          <Route path="colors" element={<ColorsComponent />} />{" "}
-          {/* Use the renamed component */}
+          <Route path="colors" element={<ColorsComponent />} />
           <Route path="locations" element={<Locations />} />
           <Route path="product-list" element={<Products />} />
           <Route path="pricelists" element={<Pricelists />} />

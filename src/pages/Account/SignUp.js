@@ -124,7 +124,7 @@ const SignUp = () => {
                 alt="Ichthus Technology Logo"
               />
               <h2 className="mt-4 text-3xl font-bold text-gray-900">
-                Ichthus Technology
+                POINT7VEN
               </h2>
               <p className="mt-2 text-sm text-gray-600">Create your account</p>
             </div>

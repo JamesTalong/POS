@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import AddRecievingTransfer from "../ReceivingTransfer/AddRecievingTransfer";
 import { useSelector } from "react-redux";
-import { selectFullName } from "../../../../redux/IchthusSlice";
+import { selectUserName } from "../../../../redux/IchthusSlice";
 import { domain, domainMark } from "../../../../security";
 import UpdateTransfer from "./UpdateTransfer"; // Ensure this import is correct
 
@@ -13,7 +13,7 @@ const OutsideApiTable = ({ refreshTrigger, onReceiveSuccess }) => {
   const [isReceiveModalOpen, setIsReceiveModalOpen] = useState(false); // Renamed for clarity
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false); // NEW state for update modal
   const [selectedTransfer, setSelectedTransfer] = useState(null);
-  const fullName = useSelector(selectFullName);
+  const fullName = useSelector(selectUserName);
 
   const [showOnlyBatangas, setShowOnlyBatangas] = useState(true);
 

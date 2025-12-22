@@ -3,7 +3,7 @@ import ReactDOM from "react-dom";
 
 const Loader = () => {
   return ReactDOM.createPortal(
-    <div className="fixed inset-0 bg-black bg-opacity-70 z-50 flex justify-center items-center">
+    <div className="fixed inset-0 bg-black bg-opacity-70 z-[100] flex justify-center items-center">
       <div className="relative">
         <img src={loaderImg} alt="Loading..." className="mx-auto" />
       </div>

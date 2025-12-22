@@ -4,16 +4,21 @@ import { toast } from "react-toastify";
 const initialState = {
   // Auth state
   isLoggedIn: false,
-  email: null,
   userID: null,
-  fullName: null,
+  userName: null,
+  employeeId: null,
+  firstName: null,
+  lastName: null,
+  middleName: null,
   imgUrl: null,
-  admin: null,
+  admin: false,
   roleName: null,
   roleId: null,
+  locationId: null,
+  locationName: null,
 
-  // Other state
-  posProducts: [], // New array for POS products
+  // Other application state
+  posProducts: [],
   checkedBrands: [],
   checkedCategories: [],
   checkedCategoriesTwo: [],
@@ -27,93 +32,137 @@ const initialState = {
   existingLocation: null,
 };
 
+// HELPER: Calculate total quantity currently in cart for a specific product ID (in Base Units)
+const calculateTotalBaseUsage = (cartItems, productId) => {
+  return cartItems
+    .filter((item) => item.productId === productId)
+    .reduce((total, item) => {
+      const rate = item.conversionRate || 1;
+      return total + item.quantity * rate;
+    }, 0);
+};
+
 export const IchthusSlice = createSlice({
   name: "Ichthus",
   initialState,
   reducers: {
-    // Auth reducers
+    // --- AUTH REDUCERS (Unchanged) ---
     SET_ACTIVE_USER: (state, action) => {
-      console.log("SET_ACTIVE_USER reducer executed");
-      console.log(action.payload);
-      const { email, userID, fullName, imgUrl, admin, roleName, roleId } =
-        action.payload;
+      const {
+        userID,
+        userName,
+        employeeId,
+        imgUrl,
+        admin,
+        roleName,
+        roleId,
+        firstName,
+        lastName,
+        middleName,
+        locationId,
+        locationName,
+      } = action.payload;
 
       state.isLoggedIn = true;
-      state.email = email;
       state.userID = userID;
-      state.fullName = fullName;
+      state.userName = userName;
+      state.employeeId = employeeId;
       state.imgUrl = imgUrl;
       state.admin = admin;
       state.roleName = roleName;
       state.roleId = roleId;
+      state.firstName = firstName;
+      state.lastName = lastName;
+      state.middleName = middleName;
+      state.locationId = locationId;
+      state.locationName = locationName;
     },
 
     REMOVE_ACTIVE_USER: (state) => {
-      console.log("REMOVE_ACTIVE_USER reducer executed");
       state.isLoggedIn = false;
-      state.email = null;
       state.userID = null;
-      state.fullName = null;
+      state.userName = null;
+      state.employeeId = null;
       state.imgUrl = null;
       state.admin = false;
       state.roleName = null;
       state.roleId = null;
+      state.firstName = null;
+      state.lastName = null;
+      state.middleName = null;
+      state.locationId = null;
+      state.locationName = null;
       state.posProducts = [];
       state.lastModifiedProducts = [];
       state.selectedCustomer = null;
     },
 
+    // --- POS REDUCERS (UPDATED STOCK LOGIC) ---
     addToPos: (state, action) => {
-      const item = state.posProducts.find(
-        (item) => item.id === action.payload.id
+      const incoming = action.payload;
+      const incomingRate = incoming.conversionRate || 1;
+      const incomingBaseQty = (incoming.quantity || 1) * incomingRate;
+
+      // Calculate max stock in Base Units (e.g., if max is 3 boxes of 10, total is 30)
+      const maxBaseStock = incoming.maxQuantity * incomingRate;
+
+      // Calculate what is already in the cart for this Product ID (across all units)
+      const currentBaseUsage = calculateTotalBaseUsage(
+        state.posProducts,
+        incoming.productId
       );
-      const incomingQuantity = action.payload.quantity || 1;
-      const maxQuantity = action.payload.maxQuantity;
 
-      if (incomingQuantity < 1) {
+      if ((incoming.quantity || 1) < 1) {
         toast.error("Quantity must be at least 1.");
-        return; // Prevent addition if quantity is less than 1
+        return;
       }
 
-      if (incomingQuantity > maxQuantity) {
+      // Check if adding this will exceed total physical stock
+      if (currentBaseUsage + incomingBaseQty > maxBaseStock) {
         toast.error(
-          `Quantity cannot exceed the maximum quantity of ${maxQuantity}.`
+          `Insufficient stock! You have ${
+            maxBaseStock - currentBaseUsage
+          } base units remaining.`
         );
-        return; // Prevent addition if quantity exceeds maxQuantity
+        return;
       }
 
-      if (item) {
-        const newQuantity = item.quantity + incomingQuantity;
-        if (newQuantity > maxQuantity) {
-          toast.error(
-            `Total quantity cannot exceed the maximum quantity of ${maxQuantity}.`
-          );
-          return;
-        }
-        item.quantity = newQuantity;
+      const itemIndex = state.posProducts.findIndex(
+        (item) => item.id === incoming.id
+      );
+
+      if (itemIndex >= 0) {
+        state.posProducts[itemIndex].quantity += incoming.quantity || 1;
       } else {
         state.posProducts.push({
-          ...action.payload,
-          quantity: incomingQuantity,
+          ...incoming,
+          quantity: incoming.quantity || 1,
         });
       }
 
+      // Update Last Modified Logic
       const existingLastModified = state.lastModifiedProducts.find(
-        (p) => p.id === action.payload.id
+        (p) => p.id === incoming.id
       );
 
+      // Get the updated quantity of the specific line item
+      const updatedItemQty =
+        itemIndex >= 0
+          ? state.posProducts[itemIndex].quantity
+          : incoming.quantity || 1;
+
       if (existingLastModified) {
-        existingLastModified.quantity = item ? item.quantity : incomingQuantity;
+        existingLastModified.quantity = updatedItemQty;
       } else {
         state.lastModifiedProducts.push({
-          id: action.payload.id,
-          quantity: item ? item.quantity : incomingQuantity,
+          id: incoming.id,
+          quantity: updatedItemQty,
         });
       }
 
       state.lastModifiedProduct = {
-        id: action.payload.id,
-        quantity: item ? item.quantity : incomingQuantity,
+        id: incoming.id,
+        quantity: updatedItemQty,
       };
 
       toast.success("Product added to POS");
@@ -127,19 +176,33 @@ export const IchthusSlice = createSlice({
       const item = state.posProducts.find(
         (item) => item.id === action.payload.id
       );
+
       if (item) {
-        const maxQuantity = item.maxQuantity;
-        if (item.quantity + 1 > maxQuantity) {
+        const rate = item.conversionRate || 1;
+        const oneUnitInBase = 1 * rate;
+
+        // Max stock available in base units
+        const maxBaseStock = item.maxQuantity * rate;
+
+        // Current usage across all variants of this product
+        const currentBaseUsage = calculateTotalBaseUsage(
+          state.posProducts,
+          item.productId
+        );
+
+        if (currentBaseUsage + oneUnitInBase > maxBaseStock) {
           toast.error(
-            `Quantity cannot exceed the maximum quantity of ${maxQuantity}.`
+            `Cannot increase quantity. Exceeds total available stock.`
           );
           return;
         }
+
         item.quantity++;
+
+        // Update Last Modified
         const existingLastModified = state.lastModifiedProducts.find(
           (p) => p.id === item.id
         );
-
         if (existingLastModified) {
           existingLastModified.quantity = item.quantity;
         } else {
@@ -148,7 +211,6 @@ export const IchthusSlice = createSlice({
             quantity: item.quantity,
           });
         }
-
         state.lastModifiedProduct = { id: item.id, quantity: item.quantity };
       }
     },
@@ -159,10 +221,10 @@ export const IchthusSlice = createSlice({
       );
       if (item && item.quantity > 1) {
         item.quantity--;
+
         const existingLastModified = state.lastModifiedProducts.find(
           (p) => p.id === item.id
         );
-
         if (existingLastModified) {
           existingLastModified.quantity = item.quantity;
         } else {
@@ -171,7 +233,6 @@ export const IchthusSlice = createSlice({
             quantity: item.quantity,
           });
         }
-
         state.lastModifiedProduct = { id: item.id, quantity: item.quantity };
       }
     },
@@ -179,30 +240,38 @@ export const IchthusSlice = createSlice({
     updateQuantity: (state, action) => {
       const { id, quantity } = action.payload;
       const product = state.posProducts.find((item) => item.id === id);
+
       if (product) {
-        const maxQuantity = product.maxQuantity;
         if (quantity < 1) {
           toast.error("Quantity must be at least 1.");
           return;
         }
-        if (quantity > maxQuantity) {
-          toast.error(
-            `Quantity cannot exceed the maximum quantity of ${maxQuantity}.`
-          );
+
+        const rate = product.conversionRate || 1;
+        const maxBaseStock = product.maxQuantity * rate;
+
+        // Calculate usage of OTHER items of same product ID (excluding this one being updated)
+        const otherVariantsUsage = state.posProducts
+          .filter((p) => p.productId === product.productId && p.id !== id)
+          .reduce((sum, p) => sum + p.quantity * (p.conversionRate || 1), 0);
+
+        const newProposedUsage = quantity * rate;
+
+        if (otherVariantsUsage + newProposedUsage > maxBaseStock) {
+          toast.error(`Total quantity exceeds available stock.`);
           return;
         }
 
         product.quantity = quantity;
+
         const existingLastModified = state.lastModifiedProducts.find(
           (p) => p.id === id
         );
-
         if (existingLastModified) {
           existingLastModified.quantity = product.quantity;
         } else {
           state.lastModifiedProducts.push({ id, quantity: product.quantity });
         }
-
         state.lastModifiedProduct = { id, quantity: product.quantity };
       }
     },
@@ -212,7 +281,7 @@ export const IchthusSlice = createSlice({
       const product = state.posProducts.find((item) => item.id === id);
       if (product) {
         const maxDiscount = product.quantity * product.price;
-        product.discount = Math.max(0, Math.min(discount, maxDiscount)); // Clamp value
+        product.discount = Math.max(0, Math.min(discount, maxDiscount));
       }
     },
 
@@ -221,29 +290,25 @@ export const IchthusSlice = createSlice({
         (item) => item.id === action.payload
       );
 
-      // Remove the product from posProducts
       state.posProducts = state.posProducts.filter(
         (item) => item.id !== action.payload
       );
 
       if (deletedProduct) {
-        // Remove previous instances of the deleted product in lastModifiedProducts
         state.lastModifiedProducts = state.lastModifiedProducts.filter(
           (item) => item.id !== deletedProduct.id
         );
 
-        // Add the deletion entry with quantity 0
         const newLastModifiedProduct = {
           id: deletedProduct.id,
-          quantity: 0, // Mark as deleted
+          quantity: 0,
         };
         state.lastModifiedProduct = newLastModifiedProduct;
         state.lastModifiedProducts.push(newLastModifiedProduct);
       }
-
       toast.error("Product removed from POS");
     },
-
+    // ... rest of filters (toggleBrand, toggleCategory, etc) remain unchanged
     toggleBrand: (state, action) => {
       const brand = action.payload;
       const isBrandChecked = state.checkedBrands.some((b) => b.id === brand.id);
@@ -269,56 +334,48 @@ export const IchthusSlice = createSlice({
       }
     },
     toggleCategoryTwo: (state, action) => {
-      const categoryTwo = action.payload;
-      const isCategoryTwoChecked = state.checkedCategoriesTwo.some(
-        (b) => b.id === categoryTwo.id
+      const category = action.payload;
+      const isChecked = state.checkedCategoriesTwo.some(
+        (b) => b.id === category.id
       );
-      if (isCategoryTwoChecked) {
+      if (isChecked)
         state.checkedCategoriesTwo = state.checkedCategoriesTwo.filter(
-          (b) => b.id !== categoryTwo.id
+          (b) => b.id !== category.id
         );
-      } else {
-        state.checkedCategoriesTwo.push(categoryTwo);
-      }
+      else state.checkedCategoriesTwo.push(category);
     },
     toggleCategoryThree: (state, action) => {
-      const categoryThree = action.payload;
-      const isCategoryThreeChecked = state.checkedCategoriesThree.some(
-        (b) => b.id === categoryThree.id
+      const category = action.payload;
+      const isChecked = state.checkedCategoriesThree.some(
+        (b) => b.id === category.id
       );
-      if (isCategoryThreeChecked) {
+      if (isChecked)
         state.checkedCategoriesThree = state.checkedCategoriesThree.filter(
-          (b) => b.id !== categoryThree.id
+          (b) => b.id !== category.id
         );
-      } else {
-        state.checkedCategoriesThree.push(categoryThree);
-      }
+      else state.checkedCategoriesThree.push(category);
     },
     toggleCategoryFour: (state, action) => {
-      const categoryFour = action.payload;
-      const isCategoryFourChecked = state.checkedCategoriesFour.some(
-        (b) => b.id === categoryFour.id
+      const category = action.payload;
+      const isChecked = state.checkedCategoriesFour.some(
+        (b) => b.id === category.id
       );
-      if (isCategoryFourChecked) {
+      if (isChecked)
         state.checkedCategoriesFour = state.checkedCategoriesFour.filter(
-          (b) => b.id !== categoryFour.id
+          (b) => b.id !== category.id
         );
-      } else {
-        state.checkedCategoriesFour.push(categoryFour);
-      }
+      else state.checkedCategoriesFour.push(category);
     },
     toggleCategoryFive: (state, action) => {
-      const categoryFive = action.payload;
-      const isCategoryFiveChecked = state.checkedCategoriesFive.some(
-        (b) => b.id === categoryFive.id
+      const category = action.payload;
+      const isChecked = state.checkedCategoriesFive.some(
+        (b) => b.id === category.id
       );
-      if (isCategoryFiveChecked) {
+      if (isChecked)
         state.checkedCategoriesFive = state.checkedCategoriesFive.filter(
-          (b) => b.id !== categoryFive.id
+          (b) => b.id !== category.id
         );
-      } else {
-        state.checkedCategoriesFive.push(categoryFive);
-      }
+      else state.checkedCategoriesFive.push(category);
     },
     resetPos: (state) => {
       state.posProducts = [];
@@ -333,12 +390,11 @@ export const IchthusSlice = createSlice({
       state.selectedCustomer = null;
     },
     triggerRefresh: (state) => {
-      state.refreshProducts = !state.refreshProducts; // Toggle state to force update
+      state.refreshProducts = !state.refreshProducts;
     },
   },
 });
 
-// Export actions
 export const {
   SET_ACTIVE_USER,
   REMOVE_ACTIVE_USER,
@@ -361,17 +417,23 @@ export const {
   setExistingLocation,
 } = IchthusSlice.actions;
 
-// Export selectors
+// Selectors
 export const selectIsLoggedIn = (state) => state.orebiReducer.isLoggedIn;
-
-export const selectEmail = (state) => state.orebiReducer.email;
-export const selectFullName = (state) => state.orebiReducer.fullName;
+export const selectUserID = (state) => state.orebiReducer.userID;
+export const selectUserName = (state) => state.orebiReducer.userName;
+export const selectEmployeeId = (state) => state.orebiReducer.employeeId;
 export const selectImgUrl = (state) => state.orebiReducer.imgUrl;
 export const selectAdmin = (state) => state.orebiReducer.admin;
 export const selectRoleName = (state) => state.orebiReducer.roleName;
 export const selectRoleId = (state) => state.orebiReducer.roleId;
-
-export const selectUserID = (state) => state.orebiReducer.userID;
+export const selectFirstName = (state) => state.orebiReducer.firstName;
+export const selectLastName = (state) => state.orebiReducer.lastName;
+export const selectFullName = (state) =>
+  `${state.orebiReducer.firstName || ""} ${
+    state.orebiReducer.lastName || ""
+  }`.trim();
+export const selectLocationId = (state) => state.orebiReducer.locationId;
+export const selectLocationName = (state) => state.orebiReducer.locationName;
 export const selectPosProducts = (state) => state.orebiReducer.posProducts;
 export const selectLastModifiedProduct = (state) =>
   state.orebiReducer.lastModifiedProduct;
@@ -379,4 +441,5 @@ export const selectLastModifiedProducts = (state) =>
   state.orebiReducer.lastModifiedProducts;
 export const selectSelectedCustomer = (state) =>
   state.orebiReducer.selectedCustomer;
+
 export default IchthusSlice.reducer;

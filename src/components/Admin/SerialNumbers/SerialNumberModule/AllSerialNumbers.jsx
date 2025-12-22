@@ -8,38 +8,80 @@ import {
   Search,
   Filter,
   Package,
+  Plus,
+  Edit,
   Hash,
-  Info,
-  AlertTriangle,
+  MapPin,
+  Tag,
+  RefreshCw,
 } from "lucide-react";
 
-// Keep your existing components
 import Loader from "../../../loader/Loader";
 import AddSerialNumber from "./AddSerialNumber";
 import Pagination from "../../Pagination";
 import { domain } from "../../../../security";
 
-// Import the new card component for mobile view
-import SerialCard from "./SerialCard";
+// Simplified Mobile Card Component
+const SerialCard = ({ serial, onEdit }) => (
+  <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
+    <div className="flex justify-between items-start mb-2">
+      <div className="flex items-center gap-2">
+        <Hash className="w-4 h-4 text-indigo-500" />
+        <span className="font-bold text-slate-800 font-mono">
+          {serial.serialName || (
+            <span className="text-gray-400 italic">No Serial Code</span>
+          )}
+        </span>
+      </div>
+      <span
+        className={`px-2 py-1 rounded text-xs font-semibold ${
+          serial.isAvailable
+            ? "bg-green-100 text-green-700"
+            : "bg-slate-100 text-slate-600"
+        }`}
+      >
+        {serial.isAvailable ? "Available" : "Sold"}
+      </span>
+    </div>
+    <div className="text-sm text-slate-600 space-y-1">
+      <p className="flex items-center gap-2">
+        <Package size={14} /> {serial.productName}
+      </p>
+      <p className="flex items-center gap-2 text-xs text-slate-500">
+        <Tag size={12} /> Batch: {serial.batchNumber || "N/A"}
+      </p>
+      <p className="flex items-center gap-2 text-xs text-slate-500">
+        <MapPin size={12} /> {serial.locationName}
+      </p>
+    </div>
+    <button
+      onClick={() => onEdit(serial)}
+      className="mt-3 w-full py-2 border border-indigo-100 text-indigo-600 rounded hover:bg-indigo-50 text-sm font-medium"
+    >
+      Edit Details
+    </button>
+  </div>
+);
 
 const AllSerialNumbers = () => {
-  // ... (All your existing state and functions remain exactly the same)
-  // [useState, useCallback, useEffect, fetchData, etc.]
   const [serialNumbers, setSerialNumbers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [serialToEdit, setSerialToEdit] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
+
+  // Filter States
   const [searchTerm, setSearchTerm] = useState("");
+  const [batchOrProductSearch, setBatchOrProductSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filteredSerials, setFilteredSerials] = useState([]);
-  const [batchOrProductSearch, setBatchOrProductSearch] = useState("");
 
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       const response = await axios.get(`${domain}/api/SerialNumbers`);
+      // Controller returns: Id, SerialName, ProductName, BatchNumber, LocationName, IsAvailable, etc.
       setSerialNumbers(response.data);
     } catch (error) {
       console.error("Error fetching data:", error);
@@ -53,31 +95,37 @@ const AllSerialNumbers = () => {
     fetchData();
   }, [fetchData]);
 
+  // Filtering Logic
   useEffect(() => {
     let results = serialNumbers.filter((item) => {
+      // 1. Search Serial Name
       const serialMatch = (item.serialName || "")
         .toLowerCase()
         .includes(searchTerm.toLowerCase());
-      const batchMatch = String(item.batchId || "")
+
+      // 2. Search Batch Name OR Product Name
+      const batchMatch = (item.batchNumber || "")
         .toLowerCase()
         .includes(batchOrProductSearch.toLowerCase());
-      const productMatch = (item.pricelistProduct?.productName || "")
+      const productMatch = (item.productName || "")
         .toLowerCase()
         .includes(batchOrProductSearch.toLowerCase());
+
       return (
         serialMatch &&
         (batchOrProductSearch === "" || batchMatch || productMatch)
       );
     });
 
+    // 3. Filter by Status (Available vs Sold)
     if (filterStatus === "sold") {
-      results = results.filter((item) => item.isSold);
-    } else if (filterStatus === "unsold") {
-      results = results.filter((item) => !item.isSold);
+      results = results.filter((item) => item.isAvailable === false);
+    } else if (filterStatus === "available") {
+      results = results.filter((item) => item.isAvailable === true);
     }
 
     setFilteredSerials(results);
-    setCurrentPage(1);
+    setCurrentPage(1); // Reset to page 1 on filter change
   }, [searchTerm, batchOrProductSearch, filterStatus, serialNumbers]);
 
   const openModal = (serial = null) => {
@@ -99,197 +147,222 @@ const AllSerialNumbers = () => {
     indexOfLastItem
   );
 
-  const totalSold = serialNumbers.filter((item) => item.isSold).length;
-  const totalUnsold = serialNumbers.length - totalSold;
+  const totalAvailable = serialNumbers.filter(
+    (item) => item.isAvailable
+  ).length;
+  const totalSold = serialNumbers.length - totalAvailable;
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 min-h-screen">
-      <ToastContainer
-        position="top-right"
-        autoClose={3000}
-        hideProgressBar={false}
-      />
+    <div className="min-h-screen pb-12 ">
+      <ToastContainer position="top-right" autoClose={3000} />
 
-      <div className="max-w-7xl mx-auto">
-        {/* --- Header & Title --- */}
-        <h1 className="text-3xl font-bold text-slate-800 tracking-tight">
-          Serial Numbers Dashboard
-        </h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Search, filter, and view the status of all serial numbers.
-        </p>
+      {/* --- Header --- */}
+      <div className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-20">
+        <div className="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                <Hash className="text-indigo-600" /> Serial Dashboard
+              </h1>
+              <p className="text-sm text-slate-500 mt-1">
+                Manage individual serial numbers, track status and history.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={fetchData}
+                className="p-2.5 text-slate-500 hover:text-indigo-600 bg-slate-100 hover:bg-indigo-50 rounded-lg transition"
+                title="Refresh Data"
+              >
+                <RefreshCw size={18} />
+              </button>
+              <button
+                onClick={() => openModal()}
+                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-5 py-2.5 rounded-lg shadow-sm transition-all"
+              >
+                <Plus size={18} />
+                Add Serial
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
 
+      <div className="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 mt-6">
         {/* --- Stats Cards --- */}
-        <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div className="bg-blue-100 text-blue-800 rounded-xl p-4 flex items-start gap-4">
-            <div className="bg-blue-200 p-2 rounded-lg">
-              <BarChart2 className="w-6 h-6" />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4">
+            <div className="p-3 bg-blue-50 text-blue-600 rounded-lg">
+              <BarChart2 />
             </div>
             <div>
-              <p className="text-sm font-semibold">Total Serials</p>
-              <p className="text-2xl font-bold">{serialNumbers.length}</p>
+              <p className="text-sm text-slate-500">Total Serials</p>
+              <p className="text-2xl font-bold text-slate-800">
+                {serialNumbers.length}
+              </p>
             </div>
           </div>
-          <div className="bg-green-100 text-green-800 rounded-xl p-4 flex items-start gap-4">
-            <div className="bg-green-200 p-2 rounded-lg">
-              <CheckCircle className="w-6 h-6" />
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4">
+            <div className="p-3 bg-green-50 text-green-600 rounded-lg">
+              <CheckCircle />
             </div>
             <div>
-              <p className="text-sm font-semibold">Sold</p>
-              <p className="text-2xl font-bold">{totalSold}</p>
+              <p className="text-sm text-slate-500">Available</p>
+              <p className="text-2xl font-bold text-slate-800">
+                {totalAvailable}
+              </p>
             </div>
           </div>
-          <div className="bg-red-100 text-red-800 rounded-xl p-4 flex items-start gap-4">
-            <div className="bg-red-200 p-2 rounded-lg">
-              <XCircle className="w-6 h-6" />
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4">
+            <div className="p-3 bg-slate-50 text-slate-500 rounded-lg">
+              <XCircle />
             </div>
             <div>
-              <p className="text-sm font-semibold">Available</p>
-              <p className="text-2xl font-bold">{totalUnsold}</p>
+              <p className="text-sm text-slate-500">Sold / Unavailable</p>
+              <p className="text-2xl font-bold text-slate-800">{totalSold}</p>
             </div>
           </div>
         </div>
 
-        {/* --- Search & Filter Controls --- */}
-        <div className="mt-6 p-4 bg-white rounded-xl shadow-sm ring-1 ring-slate-200/50 grid md:grid-cols-3 gap-4 items-center">
-          <div className="relative md:col-span-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+        {/* --- Filters --- */}
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 grid md:grid-cols-3 gap-4 mb-6">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Search by Serial..."
-              className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              placeholder="Search Serial Number..."
+              className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 outline-none"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <div className="relative md:col-span-1">
-            <Package className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+          <div className="relative">
+            <Package className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Search by Product or Batch..."
-              className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              placeholder="Filter by Product or Batch..."
+              className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 outline-none"
               value={batchOrProductSearch}
               onChange={(e) => setBatchOrProductSearch(e.target.value)}
             />
           </div>
-          <div className="relative md:col-span-1">
-            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+          <div className="relative">
+            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <select
-              className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg appearance-none bg-white focus:ring-2 focus:ring-indigo-500"
+              className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white outline-none appearance-none"
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
             >
               <option value="all">All Statuses</option>
-              <option value="sold">Sold</option>
-              <option value="unsold">Available</option>
+              <option value="available">Available Only</option>
+              <option value="sold">Sold Only</option>
             </select>
           </div>
         </div>
 
-        {/* --- Search Results Info Bar --- */}
-        {(batchOrProductSearch || searchTerm) && (
-          <div
-            className={`mt-4 p-3 rounded-lg flex items-center gap-3 text-sm ${
-              filteredSerials.length > 0
-                ? "bg-indigo-50 text-indigo-700"
-                : "bg-yellow-50 text-yellow-700"
-            }`}
-          >
-            {filteredSerials.length > 0 ? (
-              <Info size={16} />
-            ) : (
-              <AlertTriangle size={16} />
-            )}
-            <span>
-              {filteredSerials.length > 0
-                ? `Found ${filteredSerials.length} match${
-                    filteredSerials.length > 1 ? "es" : ""
-                  }.`
-                : `No results found for your search.`}
-            </span>
-          </div>
-        )}
-
-        {/* --- Content Area --- */}
-        <div className="mt-6">
-          {loading ? (
+        {/* --- Content --- */}
+        {loading ? (
+          <div className="flex justify-center py-20">
             <Loader />
-          ) : (
-            <>
-              {/* ---------------------------------- */}
-              {/* ---- DESKTOP VIEW: TABLE ---- */}
-              {/* ---------------------------------- */}
-              <div className="hidden md:block bg-white rounded-lg shadow-sm ring-1 ring-slate-900/5 overflow-hidden">
-                <table className="w-full text-sm text-left text-slate-600">
-                  <thead className="text-xs text-slate-700 uppercase bg-slate-100">
-                    <tr>
-                      <th className="px-6 py-3">Serial Number</th>
-                      <th className="px-6 py-3">Product Name</th>
-                      <th className="px-6 py-3">Batch ID</th>
-                      <th className="px-6 py-3">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {currentSerials.map((item) => (
-                      <tr
-                        key={item.id}
-                        className="bg-white border-b border-slate-200 hover:bg-slate-50"
-                      >
-                        <td className="px-6 py-4 font-medium text-slate-900 font-mono">
-                          {item.serialName}
-                        </td>
-                        <td className="px-6 py-4">
-                          {item.pricelistProduct?.productName || "N/A"}
-                        </td>
-                        <td className="px-6 py-4 font-mono text-xs">
-                          {item.batchId || "N/A"}
-                        </td>
-                        <td className="px-6 py-4">
-                          <span
-                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              item.isSold
-                                ? "bg-slate-100 text-slate-800"
-                                : "bg-green-100 text-green-800"
-                            }`}
-                          >
-                            {item.isSold ? "Sold" : "Available"}
+          </div>
+        ) : (
+          <>
+            <div className="hidden md:block bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+              <table className="w-full text-sm text-left text-slate-600">
+                <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th className="px-6 py-4">Serial Number</th>
+                    <th className="px-6 py-4">Product</th>
+                    <th className="px-6 py-4">Batch Info</th>
+                    <th className="px-6 py-4">Location</th>
+                    <th className="px-6 py-4">Status</th>
+                    <th className="px-6 py-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {currentSerials.map((item) => (
+                    <tr key={item.id} className="hover:bg-slate-50 transition">
+                      <td className="px-6 py-4 font-bold text-indigo-700 font-mono">
+                        {item.serialName || (
+                          <span className="text-gray-400 font-normal italic">
+                            Empty
                           </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 font-medium text-slate-800">
+                        {item.productName}
+                      </td>
+                      <td className="px-6 py-4 text-xs">
+                        <span className="bg-slate-100 px-2 py-1 rounded border border-slate-200 font-mono text-slate-600">
+                          {item.batchNumber || "N/A"}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">{item.locationName}</td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            item.isAvailable
+                              ? "bg-green-100 text-green-800"
+                              : "bg-red-100 text-red-800"
+                          }`}
+                        >
+                          {/* {item.isAvailable ? "Available" : "Sold"} */}
+                          {item.inventoryStatusName}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <button
+                          onClick={() => openModal(item)}
+                          className="p-2 bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-100 transition"
+                          title="Edit"
+                        >
+                          <Edit size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {currentSerials.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan="6"
+                        className="px-6 py-10 text-center text-slate-400"
+                      >
+                        No serial numbers found matching your filters.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
 
-              {/* ---------------------------------- */}
-              {/* ---- MOBILE VIEW: CARDS ---- */}
-              {/* ---------------------------------- */}
-              <div className="grid grid-cols-1 gap-5 md:hidden">
-                {currentSerials.map((item) => (
-                  <SerialCard key={item.id} serial={item} onEdit={openModal} />
-                ))}
-              </div>
-
-              {/* Pagination Component */}
-              {filteredSerials.length > itemsPerPage && (
-                <div className="mt-6">
-                  <Pagination
-                    itemsPerPage={itemsPerPage}
-                    totalItems={filteredSerials.length}
-                    currentPage={currentPage}
-                    paginate={paginate}
-                  />
+            {/* Mobile View */}
+            <div className="md:hidden grid grid-cols-1 gap-4">
+              {currentSerials.map((item) => (
+                <SerialCard key={item.id} serial={item} onEdit={openModal} />
+              ))}
+              {currentSerials.length === 0 && (
+                <div className="text-center text-slate-400 py-10">
+                  No items found.
                 </div>
               )}
-            </>
-          )}
-        </div>
+            </div>
+
+            <div className="mt-6">
+              <Pagination
+                itemsPerPage={itemsPerPage}
+                totalItems={filteredSerials.length}
+                currentPage={currentPage}
+                paginate={paginate}
+              />
+            </div>
+          </>
+        )}
       </div>
 
       {/* --- Modal --- */}
       {isModalVisible && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-60 z-50">
-          <div className="bg-white p-6 sm:p-8 rounded-xl shadow-xl max-h-[90vh] overflow-y-auto w-[90vw] max-w-lg">
+        <div className="fixed inset-0 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <AddSerialNumber
               onClose={closeModal}
               refreshData={fetchData}

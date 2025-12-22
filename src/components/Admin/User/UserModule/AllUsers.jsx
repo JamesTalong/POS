@@ -1,345 +1,241 @@
-import React, { useState, useEffect } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { ToastContainer, toast } from "react-toastify";
-import useUsersData from "../../../../CustomHooks/useGetData";
-import { db, auth, storage } from "../../../../firebase/config";
-import { deleteDoc, doc } from "firebase/firestore";
 import Loader from "../../../loader/Loader";
 import AddUsers from "../UserModule/AddUsers";
-import { deleteUser as deleteAuthUser } from "firebase/auth";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import {
-  faSort,
-  faSortUp,
-  faSortDown,
-} from "@fortawesome/free-solid-svg-icons";
-import { deleteObject, ref } from "firebase/storage";
-import useUserData from "../../../../CustomHooks/useUserData";
-import noImage from "../../../../Images/noImage.jpg";
+import axios from "axios";
+import { domain } from "../../../../security";
 
 const AllUsers = () => {
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [search, setSearch] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [userData, setUserData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [userToEdit, setUserToEdit] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [usersPerPage] = useState(5);
-  const [sortConfig, setSortConfig] = useState({
-    field: "createdAt",
-    order: "asc",
-  });
-  // const [loading, setLoading] = useState(false); // Loading is now managed by useUsersData
-  const { users, loading, fetchNext, fetchPrev, noMore } = useUserData(search);
+  const [usersPerPage] = useState(10);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filteredUsers, setFilteredUsers] = useState([]);
+
+  const fetchData = useCallback(async () => {
+    const apiUrl = `${domain}/api/Users`;
+    try {
+      const response = await axios.get(apiUrl, {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+      // Assuming your data structure is like the example you provided
+      // If not, you might need to adjust the properties accessed below
+      setUserData(response.data);
+      setLoading(false);
+    } catch (error) {
+      console.error("Error fetching data:", error);
+      toast.error("Failed to fetch users.");
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    setCurrentPage(1); // Reset to first page when search query changes
-  }, [searchQuery]);
+    fetchData();
+  }, [fetchData]);
 
-  const deleteUser = async (id, imgUrl) => {
-    // setLoading(true); // Removed: Loading state is in the hook
+  useEffect(() => {
+    // UPDATED: Filter users by employeeName instead of userName
+    const results = userData.filter((user) =>
+      user.employeeName.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+    setFilteredUsers(results);
+    setCurrentPage(1); // Reset to first page on search
+  }, [searchTerm, userData]);
+
+  const deleteUser = async (id) => {
+    const apiUrl = `${domain}/api/Users/${id}`;
+    const confirmDelete = window.confirm(
+      "Are you sure you want to delete this user?"
+    );
+
+    if (!confirmDelete) {
+      return;
+    }
     try {
-      // Delete user image from Firebase Storage if imgUrl is defined
-      if (imgUrl) {
-        const storageRef = ref(storage, imgUrl);
-        await deleteObject(storageRef);
-      } else {
-        console.warn("No image URL provided for deletion.");
-      }
-
-      // Delete Firestore document
-      await deleteDoc(doc(db, "user", id));
-      const userToDelete = await auth.getUser(id); // Get user info by uid
-      await auth.deleteUser(userToDelete);
-      // Delete Authentication user
-      const user = auth.id;
-      if (user) {
-        await deleteAuthUser(user);
-        toast.success("User and associated data deleted successfully!");
-      } else {
-        toast.error("User not found in Authentication.");
-      }
+      await axios.delete(apiUrl);
+      toast.success("User Successfully Deleted!");
+      fetchData(); // Refresh data after deletion
     } catch (error) {
       console.error("Error deleting user:", error);
-      toast.error("An error occurred while deleting the user.");
-    } finally {
-      // setLoading(false); // Removed: Loading state is in the hook
+      toast.error("Failed to delete user.");
     }
   };
 
-  const openAddModal = () => {
-    setSelectedUser(null); // Clear selected user for "Add" mode
-    setShowAddModal(true);
-  };
-
-  const openEditModal = (user) => {
-    setSelectedUser(user); // Set selected user for "Edit" mode
-    setShowAddModal(true);
+  const openModal = (user = null) => {
+    setUserToEdit(user);
+    setIsModalVisible(true);
   };
 
   const closeModal = () => {
-    setSelectedUser(null); // Reset selected user
-    setShowAddModal(false);
+    setIsModalVisible(false);
+    setUserToEdit(null);
+    fetchData(); // Refresh data when modal closes
   };
 
-  const handleSearchChange = (e) => {
-    setSearchQuery(e.target.value);
-  };
-
-  const handleSort = (field) => {
-    // Toggle between ascending and descending
-    setSortConfig((prevSortConfig) => ({
-      field,
-      order:
-        prevSortConfig.field === field && prevSortConfig.order === "asc"
-          ? "desc"
-          : "asc",
-    }));
-  };
-
-  const sortedUsers = [...users].sort((a, b) => {
-    let aField = a[sortConfig.field];
-    let bField = b[sortConfig.field];
-
-    // Check if the field is "createdAt" and convert to date if necessary
-    if (sortConfig.field === "createdAt") {
-      aField = aField?.toDate ? aField.toDate() : new Date();
-      bField = bField?.toDate ? bField.toDate() : new Date();
-    }
-
-    // Comparison based on ascending or descending order
-    if (aField < bField) {
-      return sortConfig.order === "asc" ? -1 : 1;
-    }
-    if (aField > bField) {
-      return sortConfig.order === "asc" ? 1 : -1;
-    }
-    return 0;
-  });
-
-  const filteredUsers = sortedUsers.filter((user) =>
-    user.fullName.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
+  // Pagination Logic
   const indexOfLastUser = currentPage * usersPerPage;
   const indexOfFirstUser = indexOfLastUser - usersPerPage;
   const currentUsers = filteredUsers.slice(indexOfFirstUser, indexOfLastUser);
 
-  const getSortIcon = (field) => {
-    if (sortConfig.field !== field) return <FontAwesomeIcon icon={faSort} />;
-    if (sortConfig.order === "asc") return <FontAwesomeIcon icon={faSortUp} />;
-    return <FontAwesomeIcon icon={faSortDown} />;
-  };
+  const totalPages = Math.ceil(filteredUsers.length / usersPerPage);
 
-  if (loading) {
-    return <Loader />;
-  }
+  const paginate = (pageNumber) => setCurrentPage(pageNumber);
 
   return (
-    <div className="p-4 sm:p-6 dark:bg-gray-800 min-h-screen">
-      <div className="mb-4 flex flex-col sm:flex-row sm:justify-center sm:items-center gap-4">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-          All Users
-        </h2>
-      </div>
-      <button
-        onClick={openAddModal}
-        className="w-full sm:w-auto bg-orange-600 text-white font-bodyFont px-4 py-2 hover:bg-orange-700 duration-300 font-semibold rounded-md"
-      >
-        Add User
-      </button>
-      <div className="my-6">
-        <div className="flex justify-center">
+    <div className="container mx-auto px-4 py-8 sm:px-6 lg:px-8 min-h-screen">
+      <ToastContainer
+        position="top-right"
+        autoClose={3000}
+        hideProgressBar={false}
+      />
+      <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-center text-gray-800 mb-8 tracking-tight font-raleway">
+        System Users
+      </h1>
+      <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+        <button
+          onClick={() => openModal()}
+          className="w-full sm:w-auto bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-blue-700 transition duration-300 ease-in-out transform hover:scale-105"
+        >
+          ➕ Add New User
+        </button>
+
+        <div className="w-full sm:w-1/2">
           <input
             type="text"
-            placeholder="Search by Name"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            // Better responsive width
-            className="p-2 w-full lg:w-1/2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-500 transition duration-200"
+            // UPDATED: Changed placeholder text
+            placeholder="🔍 Search by Employee Name..."
+            className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
       </div>
 
-      {showAddModal && (
-        <div className="fixed inset-0 flex items-center justify-center bg-gray-800 bg-opacity-75 z-50 p-4">
-          {/* Added responsive width and margin to the modal */}
-          <div className="bg-white dark:bg-gray-900 p-6 rounded-lg shadow-xl w-full max-w-lg max-h-screen overflow-y-auto">
-            <AddUsers onClose={closeModal} selectedUser={selectedUser} />
-          </div>
-        </div>
+      {isModalVisible && (
+        <AddUsers
+          onClose={closeModal}
+          refreshData={fetchData}
+          userToEdit={userToEdit}
+        />
       )}
-
-      {/* --- RESPONSIVE DATA DISPLAY --- */}
-      {loading ? (
-        <div className="text-center p-4 text-gray-500 dark:text-gray-400">
-          Loading...
-        </div>
-      ) : users.length === 0 ? (
-        <div className="text-center p-4 text-gray-500 dark:text-gray-400">
-          No users found.
-        </div>
-      ) : (
-        <>
-          {/* CARD VIEW - For Mobile (default, hidden on md and up) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:hidden">
-            {users.map((user) => (
-              <div
-                key={user.id}
-                className="bg-white dark:bg-gray-900 rounded-lg shadow-md p-5 border border-gray-200 dark:border-gray-700 flex flex-col text-center"
-              >
-                {/* === Profile Section (Image, Name, Email) === */}
-                <div className="flex-grow">
-                  <img
-                    src={user.imgUrl || noImage}
-                    alt="user"
-                    // Centered the image by using mx-auto
-                    className="h-20 w-20 rounded-full object-cover border-2 border-orange-500 mx-auto mb-3"
-                  />
-                  <p className="font-semibold text-base text-gray-800 dark:text-white">
-                    {user.fullName}
-                  </p>
-                  {/* truncate class automatically adds "..." for long text */}
-                  <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
-                    {user.email}
-                  </p>
-
-                  {/* === Details Section (Role, Status) === */}
-                  <div className="border-t border-gray-200 dark:border-gray-700 my-4"></div>
-                  {/* Using grid for clean alignment of details */}
-                  <div className="grid grid-cols-2 gap-x-4 text-sm text-left">
-                    <span className="font-semibold text-gray-600 dark:text-gray-400">
-                      Admin:
-                    </span>
-                    <span className="text-gray-800 dark:text-white">
-                      {user.admin ? "Yes" : "No"}
-                    </span>
-
-                    <span className="font-semibold text-gray-600 dark:text-gray-400">
-                      Role:
-                    </span>
-                    <span className="text-gray-800 dark:text-white">
-                      {user.roleName}
-                    </span>
-
-                    <span className="font-semibold text-gray-600 dark:text-gray-400">
-                      Joined:
-                    </span>
-                    <span className="text-gray-800 dark:text-white">
-                      {user.createdAt?.toDate?.().toLocaleDateString() || "N/A"}
-                    </span>
-                  </div>
-                </div>
-
-                {/* === Action Buttons Section === */}
-                {/* Using a grid with a gap for evenly spaced buttons */}
-                <div className="mt-5 grid grid-cols-2 gap-3">
-                  <button
-                    onClick={() => openEditModal(user)}
-                    className="w-full bg-blue-500 text-white px-4 py-2 text-sm font-semibold rounded-md hover:bg-blue-600 transition-colors"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => deleteUser(user.id)}
-                    className="w-full bg-red-500 text-white px-4 py-2 text-sm font-semibold rounded-md hover:bg-red-600 transition-colors"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* TABLE VIEW - For Desktop (hidden by default, visible on md and up) */}
-          <div className="hidden md:block overflow-x-auto bg-white dark:bg-gray-900 border dark:border-gray-700 rounded-lg shadow">
-            <table className="min-w-full text-left">
-              <thead className="bg-gray-50 dark:bg-gray-800 text-xs text-gray-700 dark:text-gray-400 uppercase">
+      <div className="bg-white shadow-lg rounded-xl overflow-hidden mb-8">
+        {loading ? (
+          <Loader />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-100">
+                {/* --- CHANGES START HERE --- */}
                 <tr>
-                  <th className="px-6 py-3">User</th>
-                  <th className="px-6 py-3">Role</th>
-                  <th className="px-6 py-3">Status</th>
-                  <th className="px-6 py-3">Created At</th>
-                  <th className="px-6 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {users.map((user) => (
-                  <tr
-                    key={user.id}
-                    className="hover:bg-gray-50 dark:hover:bg-gray-800"
+                  <th
+                    scope="col"
+                    className="px-6 py-4 text-left text-xs font-medium text-gray-600 uppercase tracking-wider"
                   >
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <img
-                          src={user.imgUrl || noImage}
-                          alt="user"
-                          className="h-10 w-10 rounded-full object-cover"
-                        />
-                        <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900 dark:text-white">
-                            {user.fullName}
-                          </div>
-                          <div className="text-sm text-gray-500 dark:text-gray-400">
-                            {user.email}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                      {user.roleName}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {user.admin ? (
-                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                          Admin
-                        </span>
-                      ) : (
-                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
-                          User
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                      {user.createdAt?.toDate?.().toLocaleDateString() || "N/A"}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium flex gap-2 justify-end">
-                      <button
-                        onClick={() => openEditModal(user)}
-                        className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => deleteUser(user.id)}
-                        className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600"
-                      >
-                        Delete
-                      </button>
+                    Employee ID
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-4 text-left text-xs font-medium text-gray-600 uppercase tracking-wider"
+                  >
+                    UserName
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-4 text-left text-xs font-medium text-gray-600 uppercase tracking-wider"
+                  >
+                    Employee Name
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-4 text-left text-xs font-medium text-gray-600 uppercase tracking-wider"
+                  >
+                    Role Name
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-4 text-left text-xs font-medium text-gray-600 uppercase tracking-wider"
+                  >
+                    Actions
+                  </th>
+                </tr>
+                {/* --- CHANGES END HERE --- */}
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {currentUsers.length === 0 && !loading ? (
+                  <tr>
+                    <td
+                      colSpan="4"
+                      className="px-6 py-4 text-center text-gray-500 text-lg"
+                    >
+                      No users found.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  currentUsers.map((user) => (
+                    <tr
+                      key={user.id}
+                      className="hover:bg-gray-50 transition-colors"
+                    >
+                      {/* --- CHANGES START HERE --- */}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                        {user.employeeId}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {user.userName}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {user.employeeName}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                        {user.roleName}
+                      </td>
+                      {/* --- CHANGES END HERE --- */}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <div className="flex items-center space-x-3">
+                          <button
+                            onClick={() => openModal(user)}
+                            className="text-indigo-600 hover:text-indigo-900"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => deleteUser(user.id)}
+                            className="text-red-600 hover:text-red-900"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
-        </>
-      )}
-
-      {/* Pagination remains largely the same, maybe with some style tweaks */}
-      <div className="mt-6 flex justify-between">
-        <button
-          onClick={fetchPrev}
-          disabled={loading}
-          className="bg-gray-300 dark:bg-gray-700 text-gray-800 dark:text-white px-4 py-2 rounded-md disabled:opacity-50 hover:bg-gray-400 dark:hover:bg-gray-600"
-        >
-          Prev
-        </button>
-        <button
-          onClick={fetchNext}
-          disabled={loading || noMore}
-          className="bg-gray-300 dark:bg-gray-700 text-gray-800 dark:text-white px-4 py-2 rounded-md disabled:opacity-50 hover:bg-gray-400 dark:hover:bg-gray-600"
-        >
-          Next
-        </button>
+        )}
       </div>
+      {totalPages > 1 && (
+        <nav className="flex justify-center items-center space-x-2 mt-8">
+          {Array.from({ length: totalPages }).map((_, index) => (
+            <button
+              key={index}
+              onClick={() => paginate(index + 1)}
+              className={`min-w-[40px] px-4 py-2 rounded-lg text-sm font-semibold transition ${
+                currentPage === index + 1
+                  ? "bg-purple-600 text-white"
+                  : "bg-white text-gray-700 border"
+              }`}
+            >
+              {index + 1}
+            </button>
+          ))}
+        </nav>
+      )}
     </div>
   );
 };

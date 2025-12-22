@@ -307,53 +307,7 @@ const manualsData = [
   },
 ];
 
-// --- DATA FOR THE EXISTING FAQs (NO CHANGES NEEDED HERE) ---
 const faqData = [
-  // ... (paste your entire existing faqData array here)
-  {
-    icon: "⚠️",
-    title: "Batangas API Issue",
-    question: 'How to Resolve "Fetch Failed - Batangas API Expired" Issue?',
-    answer: (
-      <>
-        <p className="mb-2">
-          The API fetch failed due to the expiration of the database user
-          credentials.
-        </p>
-        <p className="mb-2">
-          The expired user is:
-          <br />
-          <strong>User ID:</strong> james
-          <br />
-          <strong>Password:</strong> admindb123#
-        </p>
-        <p className="mb-2">
-          This affects both the API connection and the SQL login.
-        </p>
-        <h4 className="font-bold mt-3 mb-1">✅ Steps to Fix:</h4>
-        <ol className="list-decimal list-inside ml-4">
-          <li>
-            <strong>Step 1:</strong> Remotely access the computer
-            <br />
-            <strong>IP Address:</strong> 192.168.10.222
-          </li>
-          <li>
-            <strong>Step 2:</strong> Open SQL Server Management Studio (SSMS) or
-            your preferred SQL client.
-          </li>
-          <li>
-            <strong>Step 3:</strong> Reset the expired SQL user credentials
-            <br />
-            Update the password for user <strong>james</strong> to:{" "}
-            <strong>admindb123#</strong>
-            <br />
-            Make sure the user account is enabled and not locked or expired.
-          </li>
-        </ol>
-      </>
-    ),
-    id: "batangas-api-issue",
-  },
   {
     icon: "📊",
     title: "Dashboard",

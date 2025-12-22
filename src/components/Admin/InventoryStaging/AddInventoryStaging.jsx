@@ -9,7 +9,7 @@ import Pagination from "../Pagination";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faTimes } from "@fortawesome/free-solid-svg-icons";
 import { useSelector } from "react-redux";
-import { selectFullName, selectUserID } from "../../../redux/IchthusSlice";
+import { selectUserName, selectUserID } from "../../../redux/IchthusSlice";
 
 const AddInventoryStaging = ({ onClose, onInventoryAdded }) => {
   // const [noSerialData, setNoSerialData] = useState([]);
@@ -23,7 +23,7 @@ const AddInventoryStaging = ({ onClose, onInventoryAdded }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 10; // Change to show more/less per page
   const userID = useSelector(selectUserID);
-  const fullName = useSelector(selectFullName);
+  const fullName = useSelector(selectUserName);
 
   const fetchLocations = useCallback(async () => {
     try {

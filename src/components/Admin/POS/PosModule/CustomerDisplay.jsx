@@ -1,14 +1,17 @@
 import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
-import Loader from "../../../loader/Loader";
 import { MdClose, MdPerson } from "react-icons/md";
-import { clearSelectedCustomer } from "../../../../redux/IchthusSlice";
+// 1. ADDED: import setSelectedCustomer
+import {
+  clearSelectedCustomer,
+  setSelectedCustomer,
+} from "../../../../redux/IchthusSlice";
 import { useDispatch } from "react-redux";
 import { domain } from "../../../../security";
 
 const CustomerNames = ({ onRefresh }) => {
   const [customerData, setCustomerData] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [customerDetails, setCustomerDetails] = useState(null);
   const [popupVisible, setPopupVisible] = useState(false);
   const dispatch = useDispatch();
@@ -37,43 +40,53 @@ const CustomerNames = ({ onRefresh }) => {
 
         const detailedCustomerData = await Promise.all(promises);
         setCustomerData(detailedCustomerData);
+
+        // -----------------------------------------------------------
+        // 2. ADDED: SYNC TO REDUX
+        // If we found a customer in the Temp table, update Redux immediately
+        // so ProductPos.js knows about it for calculations/saving.
+        // -----------------------------------------------------------
+        if (detailedCustomerData.length > 0) {
+          const activeCustomer = detailedCustomerData[0];
+
+          const reduxPayload = {
+            customerId: activeCustomer.customerId,
+            customerName: activeCustomer.customerName,
+            // Map details to the structure expected by ProductPos
+            address: activeCustomer.details?.address || "",
+            businessStyle: activeCustomer.details?.businessStyle || "",
+            customerType: activeCustomer.details?.customerType || "",
+            mobileNumber: activeCustomer.details?.mobileNumber || "",
+            rfid: activeCustomer.details?.rfid || "",
+            tinNumber: activeCustomer.details?.tinNumber || "",
+            ewt: activeCustomer.details?.ewt || false,
+          };
+
+          dispatch(setSelectedCustomer(reduxPayload));
+        }
+        // -----------------------------------------------------------
       } else {
         setCustomerData(data);
+        // If API is empty, ensure Redux is cleared too
+        dispatch(clearSelectedCustomer());
       }
     } catch (error) {
       console.error("Error fetching customer data:", error);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [dispatch]);
 
   useEffect(() => {
     if (onRefresh) onRefresh(fetchCustomerData);
   }, [onRefresh, fetchCustomerData]);
 
-  const fetchCustomerDetails = async (customerId) => {
-    try {
-      const response = await axios.get(
-        `${domain}/api/Customers/${customerId}`,
-        {
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-
-      const customerInfo = response.data;
-      setCustomerDetails(customerInfo);
-      setPopupVisible(true);
-    } catch (error) {
-      console.error("Error fetching customer details:", error);
-    }
-  };
-
   const deleteCustomer = async (customerId) => {
     const confirmDelete = window.confirm(
-      "Are you sure you want to delete this ?"
+      "Are you sure you want to remove this customer?"
     );
     if (!confirmDelete) {
-      return; // Exit the function if the user cancels
+      return;
     }
     try {
       await axios.delete(
@@ -85,7 +98,7 @@ const CustomerNames = ({ onRefresh }) => {
       setCustomerData((prev) =>
         prev.filter((c) => c.customerId !== customerId)
       );
-      dispatch(clearSelectedCustomer()); // ✅ Correct
+      dispatch(clearSelectedCustomer());
     } catch (error) {
       console.error("Error deleting customer:", error);
     }
@@ -100,50 +113,61 @@ const CustomerNames = ({ onRefresh }) => {
     fetchCustomerData();
   }, [fetchCustomerData]);
 
-  return (
-    <div className="container mx-auto mt-6">
-      <h1 className="text-2xl font-semibold text-center text-gray-700">
-        Customer{" "}
-      </h1>
-      <div className="overflow-x-auto shadow-md mt-4 p-4 bg-white rounded-lg">
-        {loading ? (
-          <Loader />
-        ) : customerData.length > 0 ? (
-          <ul className="space-y-2">
-            {customerData.map((customer) => (
-              <li
-                key={customer.id}
-                className="flex justify-between items-center text-gray-800 cursor-pointer hover:bg-gray-100 px-4 py-2 rounded-md"
-              >
-                <span
-                  onClick={() => fetchCustomerDetails(customer.customerId)}
-                  className="flex-grow"
-                >
-                  {customer?.customerName}
+  const selectedCustomer = customerData[0];
 
-                  <div className="text-xs text-gray-500">
-                    {customer.details?.customerType ||
-                      "No customer type available"}
-                  </div>
-                </span>
-                <MdClose
-                  className="text-red-600 hover:text-red-800"
-                  title="Delete"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteCustomer(customer.customerId);
-                  }}
-                />
-              </li>
-            ))}
-          </ul>
+  return (
+    <div className="flex items-center justify-between w-full">
+      {/* Customer Display - Direct, no dropdown */}
+      <div className="flex items-center gap-3 min-h-[44px] flex-1">
+        {loading ? (
+          <div className="flex items-center gap-2">
+            <div className="animate-pulse h-4 w-24 bg-gray-200 rounded"></div>
+          </div>
+        ) : selectedCustomer ? (
+          <>
+            <div className="p-1.5 bg-indigo-50 rounded-lg">
+              <MdPerson className="text-indigo-600 text-lg" />
+            </div>
+            <div className="flex flex-col">
+              <span className="font-medium text-gray-800 text-sm">
+                {selectedCustomer?.customerName || "Unnamed Customer"}
+              </span>
+              <span className="text-xs text-gray-500">
+                {selectedCustomer.details?.customerType || "Walk-In"}
+              </span>
+            </div>
+          </>
         ) : (
-          <p className="text-center text-gray-500">No customers found.</p>
+          <div className="flex items-center gap-3">
+            <div className="p-1.5 bg-gray-100 rounded-lg">
+              <MdPerson className="text-gray-400 text-lg" />
+            </div>
+            <div className="flex flex-col">
+              <span className="font-medium text-gray-800 text-sm">
+                Select a customer
+              </span>
+              <span className="text-xs text-gray-400">
+                No customer selected
+              </span>
+            </div>
+          </div>
         )}
       </div>
 
+      {/* Close/Delete Button - Only show if customer exists */}
+      {selectedCustomer && (
+        <button
+          onClick={() => deleteCustomer(selectedCustomer.customerId)}
+          className="flex-shrink-0 p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors ml-2"
+          title="Remove customer"
+        >
+          <MdClose size={18} />
+        </button>
+      )}
+
+      {/* Customer Details Popup */}
       {popupVisible && customerDetails && (
-        <div className="fixed inset-0 flex items-center justify-center bg-gray-800 bg-opacity-50 z-10">
+        <div className="fixed inset-0 flex items-center justify-center bg-gray-800 bg-opacity-50 z-50">
           <div className="bg-white p-6 rounded-xl shadow-2xl w-96">
             {/* Header Section */}
             <div className="flex items-center justify-between mb-6">
@@ -175,21 +199,26 @@ const CustomerNames = ({ onRefresh }) => {
             <div className="border-t border-gray-200 my-4"></div>
 
             {/* Customer Details */}
-            <div className="space-y-4">
-              <p className="text-gray-700 text-sm font-mono">
-                <strong>Address:</strong> {customerDetails.address}
+            <div className="space-y-3">
+              <p className="text-gray-700 text-sm">
+                <strong className="font-medium">Address:</strong>{" "}
+                {customerDetails.address}
               </p>
-              <p className="text-gray-700 text-sm font-mono">
-                <strong>TIN Number:</strong> {customerDetails.tinNumber}
+              <p className="text-gray-700 text-sm">
+                <strong className="font-medium">TIN Number:</strong>{" "}
+                {customerDetails.tinNumber}
               </p>
-              <p className="text-gray-700 text-sm font-mono">
-                <strong>Mobile Number:</strong> {customerDetails.mobileNumber}
+              <p className="text-gray-700 text-sm">
+                <strong className="font-medium">Mobile Number:</strong>{" "}
+                {customerDetails.mobileNumber}
               </p>
-              <p className="text-gray-700 text-sm font-mono">
-                <strong>Business Style:</strong> {customerDetails.businessStyle}
+              <p className="text-gray-700 text-sm">
+                <strong className="font-medium">Business Style:</strong>{" "}
+                {customerDetails.businessStyle}
               </p>
-              <p className="text-gray-700 text-sm font-mono">
-                <strong>RFID:</strong> {customerDetails.rfid}
+              <p className="text-gray-700 text-sm">
+                <strong className="font-medium">RFID:</strong>{" "}
+                {customerDetails.rfid}
               </p>
             </div>
           </div>

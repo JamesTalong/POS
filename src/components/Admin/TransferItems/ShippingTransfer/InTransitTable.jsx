@@ -3,7 +3,7 @@ import axios from "axios";
 import { domain } from "../../../../security";
 import AddRecievingTransfer from "../ReceivingTransfer/AddRecievingTransfer";
 import { useSelector } from "react-redux";
-import { selectFullName } from "../../../../redux/IchthusSlice";
+import { selectUserName } from "../../../../redux/IchthusSlice";
 
 // Accept the new refreshTrigger prop
 const InTransitTable = ({ refreshTrigger, onReceiveSuccess }) => {
@@ -12,7 +12,7 @@ const InTransitTable = ({ refreshTrigger, onReceiveSuccess }) => {
   const [error, setError] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState(null);
-  const fullName = useSelector(selectFullName);
+  const fullName = useSelector(selectUserName);
 
   // Define fetchTransfers inside or outside, but make sure it's stable if outside
   const fetchTransfers = async () => {

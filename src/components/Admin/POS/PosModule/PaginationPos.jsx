@@ -7,7 +7,6 @@ import {
   addToPos,
   increasePosQuantity,
   setExistingLocation,
-  selectLastModifiedProducts, // Correct import
 } from "../../../../redux/IchthusSlice";
 import { ImPlus } from "react-icons/im";
 import profile from "../../../../Images/profile.jpg";
@@ -20,19 +19,24 @@ const PaginationPos = ({
 }) => {
   const [itemOffset, setItemOffset] = useState(0);
   const [pricelists, setPricelists] = useState([]);
+  const [locations, setLocations] = useState([]);
+  const [selectedLocationId, setSelectedLocationId] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [priceType, setPriceType] = useState("");
-  const [filteredProducts, setFilteredProducts] = useState([]); // Used only for search
+  const [filteredProducts, setFilteredProducts] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [locationFilter, setLocationFilter] = useState("");
   const [selectedImage, setSelectedImage] = useState(null);
 
+  // NEW: State to track selected UOM variant for each product row
+  const [selectedVariants, setSelectedVariants] = useState({});
+
   const dispatch = useDispatch();
-  const lastModifiedProducts = useSelector(selectLastModifiedProducts);
   const posProducts = useSelector((state) => state.orebiReducer.posProducts);
   const refreshProducts = useSelector(
     (state) => state.orebiReducer.refreshProducts
   );
+
+  // Redux Filters
   const checkedBrands = useSelector(
     (state) => state.orebiReducer.checkedBrands
   );
@@ -52,17 +56,33 @@ const PaginationPos = ({
     (state) => state.orebiReducer.checkedCategoriesFive
   );
 
-  const openImageModal = (imageUrl) => {
-    setSelectedImage(imageUrl);
-  };
-  const closeImageModal = () => {
-    setSelectedImage(null);
-  };
+  const openImageModal = (imageUrl) => setSelectedImage(imageUrl);
+  const closeImageModal = () => setSelectedImage(null);
 
-  const fetchPricelists = async () => {
+  // 1. Fetch Locations
+  useEffect(() => {
+    const fetchLocations = async () => {
+      try {
+        const response = await axios.get(`${domain}/api/Locations`);
+        setLocations(response.data);
+      } catch (error) {
+        toast.error("Failed to load locations.");
+      }
+    };
+    fetchLocations();
+  }, []);
+
+  // 2. Fetch Pricelists
+  const fetchPricelists = useCallback(async () => {
+    if (!selectedLocationId) {
+      setPricelists([]);
+      return;
+    }
     setIsLoading(true);
     try {
-      const response = await axios.get(`${domain}/api/Pricelists`);
+      const response = await axios.get(
+        `${domain}/api/Products/pos-pricelist-by-location?locationId=${selectedLocationId}`
+      );
       const formattedPricelists = response.data.map((item) => ({
         ...item,
         productImage: item.productImage
@@ -73,16 +93,19 @@ const PaginationPos = ({
       }));
       setPricelists(formattedPricelists);
     } catch (error) {
-      toast.error("Failed to fetch pricelists. Please try again later.");
+      console.error(error);
+      toast.error("Failed to fetch products for this location.");
+      setPricelists([]);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [selectedLocationId]);
 
   useEffect(() => {
     fetchPricelists();
-  }, [refreshProducts]);
+  }, [fetchPricelists, refreshProducts]);
 
+  // 3. Price Range Logic
   useEffect(() => {
     if (pricelists.length > 0 && priceType) {
       const prices = pricelists
@@ -92,12 +115,10 @@ const PaginationPos = ({
       if (prices.length > 0) {
         const minPrice = Math.min(...prices);
         const maxPrice = Math.max(...prices);
-
-        if (minPrice !== maxPrice) {
-          onPriceRangeChange([minPrice, maxPrice]);
-        } else {
-          onPriceRangeChange([minPrice, maxPrice + 1]);
-        }
+        onPriceRangeChange([
+          minPrice,
+          minPrice === maxPrice ? maxPrice + 1 : maxPrice,
+        ]);
       } else {
         onPriceRangeChange([0, 0]);
       }
@@ -106,14 +127,14 @@ const PaginationPos = ({
     }
   }, [pricelists, priceType, onPriceRangeChange]);
 
+  // 4. Restore Settings
   useEffect(() => {
-    const savedLocation = localStorage.getItem("locationFilter");
+    const savedLocationId = localStorage.getItem("selectedLocationId");
     const savedPriceType = localStorage.getItem("priceType");
-    if (savedLocation) setLocationFilter(savedLocation);
+    if (savedLocationId) setSelectedLocationId(Number(savedLocationId));
     if (savedPriceType) setPriceType(savedPriceType);
   }, []);
 
-  // *** FIX: Reset pagination to page 1 whenever any filter changes ***
   useEffect(() => {
     setItemOffset(0);
   }, [
@@ -123,24 +144,24 @@ const PaginationPos = ({
     checkedCategoriesThree,
     checkedCategoriesFour,
     checkedCategoriesFive,
-    locationFilter,
+    selectedLocationId,
     currentPriceRange,
     searchQuery,
   ]);
 
   const handleLocationChange = (e) => {
-    const selectedLocation = e.target.value;
+    const newLocationId = Number(e.target.value);
     if (posProducts.length > 0) {
       toast.error(
         "Cannot change location while items are in POS. Please clear POS first."
       );
       return;
     }
-    setLocationFilter(selectedLocation);
-    localStorage.setItem("locationFilter", selectedLocation);
+    setSelectedLocationId(newLocationId);
+    localStorage.setItem("selectedLocationId", newLocationId);
     setSearchQuery("");
     setFilteredProducts([]);
-    // The useEffect above will handle resetting itemOffset
+    setSelectedVariants({});
   };
 
   const handlePriceTypeChange = (e) => {
@@ -155,80 +176,75 @@ const PaginationPos = ({
     localStorage.setItem("priceType", selectedPriceType);
   };
 
-  // *** REVISED LOGIC: Apply ALL filters first to get one final list ***
-  const fullyFilteredItems = (
+  // 5. Filtering Logic
+  const filteredFlatItems = (
     searchQuery ? filteredProducts : pricelists
   ).filter((item) => {
-    // 1. Location Filter
-    const locationMatches =
-      locationFilter === "All Locations" || item.location === locationFilter;
-    if (!locationMatches) return false;
-
-    // 2. Price Range Filter
     const price = item[priceType];
     const priceMatches =
       price >= currentPriceRange[0] && price <= currentPriceRange[1];
     if (!priceMatches) return false;
 
-    // 3. Brand Filter
     const brandMatches =
       checkedBrands.length === 0 ||
-      checkedBrands.some((brand) => brand.id === item.brandId);
+      checkedBrands.some((b) => b.id === item.brandId);
     if (!brandMatches) return false;
 
-    // 4. Category Filters
-    const categoryMatches =
+    const catMatches =
       checkedCategories.length === 0 ||
-      checkedCategories.some((category) => category.id === item.categoryId);
-    if (!categoryMatches) return false;
-
-    const categoryTwoMatches =
+      checkedCategories.some((c) => c.id === item.categoryId);
+    if (!catMatches) return false;
+    const catTwoMatches =
       checkedCategoriesTwo.length === 0 ||
-      checkedCategoriesTwo.some(
-        (categoryTwo) => categoryTwo.id === item.categoryTwoId
-      );
-    if (!categoryTwoMatches) return false;
-
-    const categoryThreeMatches =
+      checkedCategoriesTwo.some((c) => c.id === item.categoryTwoId);
+    if (!catTwoMatches) return false;
+    const catThreeMatches =
       checkedCategoriesThree.length === 0 ||
-      checkedCategoriesThree.some(
-        (categoryThree) => categoryThree.id === item.categoryThreeId
-      );
-    if (!categoryThreeMatches) return false;
-
-    const categoryFourMatches =
+      checkedCategoriesThree.some((c) => c.id === item.categoryThreeId);
+    if (!catThreeMatches) return false;
+    const catFourMatches =
       checkedCategoriesFour.length === 0 ||
-      checkedCategoriesFour.some(
-        (categoryFour) => categoryFour.id === item.categoryFourId
-      );
-    if (!categoryFourMatches) return false;
-
-    const categoryFiveMatches =
+      checkedCategoriesFour.some((c) => c.id === item.categoryFourId);
+    if (!catFourMatches) return false;
+    const catFiveMatches =
       checkedCategoriesFive.length === 0 ||
-      checkedCategoriesFive.some(
-        (categoryFive) => categoryFive.id === item.categoryFiveId
-      );
-    if (!categoryFiveMatches) return false;
+      checkedCategoriesFive.some((c) => c.id === item.categoryFiveId);
+    if (!catFiveMatches) return false;
 
-    // If all checks pass, include the item
     return true;
   });
 
-  // *** FIX: Calculate pageCount based on the final, fully filtered list ***
-  const pageCount = Math.ceil(fullyFilteredItems.length / itemsPerPage);
+  // Group by Product ID
+  const groupedProducts = Object.values(
+    filteredFlatItems.reduce((acc, item) => {
+      if (!acc[item.productId]) {
+        acc[item.productId] = [];
+      }
+      acc[item.productId].push(item);
+      return acc;
+    }, {})
+  );
 
-  // *** FIX: Slice the final, fully filtered list to get items for the current page ***
-  const currentItems = fullyFilteredItems.slice(
+  const pageCount = Math.ceil(groupedProducts.length / itemsPerPage);
+  const currentGroups = groupedProducts.slice(
     itemOffset,
     itemOffset + itemsPerPage
   );
 
   const handlePageClick = (event) => {
     const newOffset =
-      (event.selected * itemsPerPage) % (fullyFilteredItems.length || 1);
+      (event.selected * itemsPerPage) % (groupedProducts.length || 1);
     setItemOffset(newOffset);
   };
 
+  const handleVariantChange = (productId, uniqueId) => {
+    setSelectedVariants((prev) => ({
+      ...prev,
+      [productId]: uniqueId,
+    }));
+  };
+
+  // 6. Add To POS
   const handleAddToPos = useCallback(
     async (item) => {
       if (!priceType) {
@@ -237,143 +253,97 @@ const PaginationPos = ({
       }
       try {
         if (posProducts.length === 0) {
-          const deleteUrl = `${domain}/api/SerialTemps/by-pricelist/${item.id}`;
-          await axios.delete(deleteUrl);
+          const deleteUrl = `${domain}/api/SerialTemps/by-pricelist/${item.uniqueId}`;
+          await axios.delete(deleteUrl).catch(() => {});
         }
 
         if (posProducts.length > 0) {
-          const existingLocation = posProducts[0].location;
-          if (item.location !== existingLocation) {
-            toast.error(
-              `You can only add items with the same location (${existingLocation}).`
-            );
+          if (item.locationId !== posProducts[0].locationId) {
+            toast.error(`You can only add items from the same location.`);
             return;
           }
-
-          const existingPriceType = posProducts[0].vatType;
-          if (existingPriceType && existingPriceType !== priceType) {
-            toast.error(
-              `You can only add items with the same price type (${existingPriceType}).`
-            );
+          if (posProducts[0].vatType && posProducts[0].vatType !== priceType) {
+            toast.error(`You can only add items with the same price type.`);
             return;
           }
         }
 
         const existingItem = posProducts.find(
-          (posItem) => posItem.id === item.id
+          (posItem) => posItem.id === item.uniqueId
         );
+
         if (existingItem) {
-          dispatch(increasePosQuantity({ id: item.id }));
-          toast.info("Item quantity updated in POS.");
+          dispatch(increasePosQuantity({ id: item.uniqueId }));
           return;
         }
 
-        const unsoldCount = item.batches.reduce(
-          (total, batch) =>
-            total +
-            batch.serialNumbers.filter((serial) => !serial.isSold).length,
-          0
-        );
-
         dispatch(
-          setExistingLocation({ id: item.locationId, location: item.location })
+          setExistingLocation({
+            id: item.locationId,
+            location: item.locationName,
+          })
         );
         dispatch(
           addToPos({
-            id: item.id,
+            id: item.uniqueId,
             ItemCode: item.itemCode,
             image: item.productImage,
-            name: item.product,
+            name: item.productName,
             productId: item.productId,
             quantity: 1,
-            location: item.location,
+            location: item.locationName,
             locationId: item.locationId,
             price: item[priceType],
             vatType: priceType,
             hasSerial: item.hasSerial,
-            maxQuantity: unsoldCount,
+            maxQuantity: item.stockCount,
+            uom: item.uomName,
+            uomId: item.uomId,
+            priceTypeLabel: item.priceType,
+            conversionRate: item.conversionRate,
           })
         );
       } catch (error) {
-        console.error("Error in handleAddToPos:", error.response || error);
+        console.error(error);
         toast.error("An error occurred while adding the item.");
       }
     },
     [posProducts, priceType, dispatch]
   );
 
+  // 7. Search Logic
   const searchInputRef = useRef(null);
-
   const handleSearchChange = useCallback(
     (e) => {
       const query = e.target.value;
       setSearchQuery(query);
 
-      // The main search filter logic remains the same
       if (query) {
         const results = pricelists.filter(
           (item) =>
-            !item.batches.every((batch) =>
-              batch.serialNumbers.every((serial) => serial.isSold)
-            ) &&
-            (item.barCode?.toLowerCase().includes(query.toLowerCase()) ||
-              item.itemCode?.toLowerCase().includes(query.toLowerCase()) ||
-              item.product?.toLowerCase().includes(query.toLowerCase()))
+            item.stockCount > 0 &&
+            ((item.barCode &&
+              item.barCode.toLowerCase().includes(query.toLowerCase())) ||
+              (item.itemCode &&
+                item.itemCode.toLowerCase().includes(query.toLowerCase())) ||
+              (item.productName &&
+                item.productName.toLowerCase().includes(query.toLowerCase())))
         );
         setFilteredProducts(results);
       } else {
         setFilteredProducts([]);
       }
-      // The useEffect will handle resetting itemOffset
     },
     [pricelists]
   );
 
   const handleSearchKeyDown = (e) => {
-    if (e.key === "Enter" && fullyFilteredItems.length > 0) {
-      handleAddToPos(fullyFilteredItems[0]); // Add the first item from the final filtered list
+    if (e.key === "Enter" && filteredFlatItems.length > 0) {
+      handleAddToPos(filteredFlatItems[0]);
       setSearchQuery("");
       setFilteredProducts([]);
     }
   };
-
-  useEffect(() => {
-    const handleGlobalKeyDown = (e) => {
-      const isAnySearchInputFocused =
-        document.activeElement &&
-        document.activeElement.classList.contains("global-search-input");
-
-      if (e.key === "Enter") {
-        if (fullyFilteredItems.length > 0) {
-          // Check the final filtered list
-          handleAddToPos(fullyFilteredItems[0]);
-        } else {
-          if (searchQuery) {
-            toast.error(
-              "No matching products found or all items are out of stock."
-            );
-          }
-        }
-        setSearchQuery("");
-        setFilteredProducts([]);
-        if (searchInputRef.current) searchInputRef.current.value = "";
-      } else if (!isAnySearchInputFocused) {
-        if (e.key.length === 1 || e.key === "Backspace") {
-          if (searchInputRef.current) {
-            searchInputRef.current.focus();
-            let newInputValue = searchInputRef.current.value;
-            newInputValue =
-              e.key === "Backspace"
-                ? newInputValue.slice(0, -1)
-                : newInputValue + e.key;
-            // No need to call setSearchQuery and handleSearchChange here, as the input's onChange will do it
-          }
-        }
-      }
-    };
-    window.addEventListener("keydown", handleGlobalKeyDown);
-    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
-  }, [fullyFilteredItems, handleAddToPos, handleSearchChange, searchQuery]);
 
   const formatCurrency = (value) =>
     new Intl.NumberFormat("en-PH", {
@@ -381,58 +351,301 @@ const PaginationPos = ({
       currency: "PHP",
     }).format(value);
 
-  const uniqueLocations = [
-    "All Locations",
-    ...new Set(pricelists.map((item) => item.location)),
-  ];
+  // =========================================================================================
+  // HELPER COMPONENT: Render Logic for a Single Product Group
+  // =========================================================================================
+  const ProductRow = ({ group, isMobile }) => {
+    const productId = group[0].productId;
+    const selectedId = selectedVariants[productId];
+    const activeItem =
+      group.find((item) => item.uniqueId === selectedId) || group[0];
+
+    const unsoldCount = activeItem.stockCount;
+    const isOutOfStock = unsoldCount <= 0;
+    const isPromo = activeItem.priceType === "PROMO";
+
+    const totalBaseInCart = posProducts
+      .filter((p) => p.productId === productId)
+      .reduce((sum, p) => sum + p.quantity * (p.conversionRate || 1), 0);
+
+    const activeConversion = activeItem.conversionRate || 1;
+    const totalBaseStock = activeItem.stockCount * activeConversion;
+
+    const isDisabled =
+      isOutOfStock || totalBaseInCart + activeConversion > totalBaseStock;
+
+    const renderUnitSelector = () => {
+      if (group.length === 1) {
+        return (
+          <span className="text-gray-700 font-medium text-xs">
+            {activeItem.uomName}
+          </span>
+        );
+      }
+      return (
+        <select
+          className="border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:border-gray-800 bg-white cursor-pointer"
+          value={activeItem.uniqueId}
+          onChange={(e) => handleVariantChange(productId, e.target.value)}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {group.map((variant) => (
+            <option key={variant.uniqueId} value={variant.uniqueId}>
+              {variant.uomName}
+            </option>
+          ))}
+        </select>
+      );
+    };
+
+    if (isMobile) {
+      return (
+        <div
+          className={`border border-gray-100 rounded-lg shadow-sm p-2 bg-white ${
+            isOutOfStock ? "bg-red-50/50" : ""
+          }`}
+        >
+          <div className="flex gap-2">
+            <div className="relative w-14 h-14 flex-shrink-0">
+              {isOutOfStock && (
+                <p className="absolute -top-1 -left-1 text-white bg-red-600 px-1.5 py-0.5 text-[9px] font-bold rounded shadow-sm z-10">
+                  SOLD
+                </p>
+              )}
+              {isPromo && (
+                <p className="absolute -bottom-1 -right-1 text-white bg-green-600 px-1.5 py-0.5 text-[9px] font-bold rounded shadow-sm z-10">
+                  PROMO
+                </p>
+              )}
+              <img
+                src={activeItem.productImage}
+                alt={activeItem.productName}
+                className="w-full h-full object-cover rounded-md border border-gray-200"
+                onClick={() => openImageModal(activeItem.productImage)}
+              />
+            </div>
+
+            <div className="flex flex-col justify-between min-w-0 flex-grow">
+              <div>
+                <p className="font-semibold text-xs text-gray-800 truncate leading-tight">
+                  {activeItem.productName}
+                </p>
+                <div className="flex justify-between items-center mt-1">
+                  <p className="text-gray-400 text-[10px] truncate">
+                    {activeItem.itemCode}
+                  </p>
+                  <div className="origin-right scale-95">
+                    {renderUnitSelector()}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-between items-end mt-1">
+                <div className="flex flex-col">
+                  {priceType && activeItem.hasOwnProperty(priceType) ? (
+                    <span
+                      className={`font-bold text-sm leading-none ${
+                        isPromo ? "text-green-600" : "text-gray-900"
+                      }`}
+                    >
+                      {formatCurrency(activeItem[priceType])}
+                    </span>
+                  ) : (
+                    <span className="text-gray-400 text-[10px]">No Price</span>
+                  )}
+                  <span
+                    className={`text-[10px] mt-0.5 ${
+                      isOutOfStock
+                        ? "text-red-500 font-medium"
+                        : "text-gray-500"
+                    }`}
+                  >
+                    {isOutOfStock ? "Unavailable" : `${unsoldCount} in stock`}
+                  </span>
+                </div>
+
+                <button
+                  className={`w-7 h-7 flex items-center justify-center rounded-lg text-white text-xs transition-all shadow-sm ${
+                    isDisabled
+                      ? "bg-gray-200 cursor-not-allowed text-gray-400"
+                      : "bg-gray-900 hover:bg-black hover:scale-105 active:scale-95"
+                  }`}
+                  onClick={() => !isDisabled && handleAddToPos(activeItem)}
+                  disabled={isDisabled}
+                >
+                  <ImPlus />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Desktop Row
+    return (
+      <tr
+        className={`border-b border-gray-100 hover:bg-gray-50/50 transition-colors ${
+          isOutOfStock ? "bg-red-50/30" : ""
+        }`}
+      >
+        <td className="py-3 px-4 text-xs text-left">
+          <div className="flex items-center gap-3">
+            <img
+              src={activeItem.productImage}
+              alt={activeItem.productName}
+              className="w-10 h-10 object-cover rounded-md border border-gray-200 cursor-pointer hover:border-gray-400 transition-colors"
+              onClick={() => openImageModal(activeItem.productImage)}
+            />
+            <div>
+              <p className="font-medium text-gray-900">
+                {activeItem.productName}
+              </p>
+              <p className="text-gray-400 text-[11px]">{activeItem.itemCode}</p>
+            </div>
+          </div>
+        </td>
+        <td className="py-3 px-4 text-xs text-center">
+          {renderUnitSelector()}
+        </td>
+        <td className="py-3 px-4 text-xs text-center">
+          <span
+            className={`px-2 py-1 rounded-md text-[10px] font-semibold tracking-wide ${
+              isPromo
+                ? "bg-green-100 text-green-700"
+                : "bg-gray-100 text-gray-600"
+            }`}
+          >
+            {activeItem.priceType || "REG"}
+          </span>
+        </td>
+        <td
+          className={`py-3 px-4 text-xs text-center font-mono text-gray-600 ${
+            priceType === "vatEx" ? "bg-blue-50/50 text-blue-700 font-bold" : ""
+          }`}
+        >
+          {formatCurrency(activeItem.vatEx)}
+        </td>
+        <td
+          className={`py-3 px-4 text-xs text-center font-mono text-gray-600 ${
+            priceType === "vatInc"
+              ? "bg-blue-50/50 text-blue-700 font-bold"
+              : ""
+          }`}
+        >
+          {formatCurrency(activeItem.vatInc)}
+        </td>
+        <td
+          className={`py-3 px-4 text-xs text-center font-mono text-gray-600 ${
+            priceType === "reseller"
+              ? "bg-blue-50/50 text-blue-700 font-bold"
+              : ""
+          }`}
+        >
+          {formatCurrency(activeItem.reseller)}
+        </td>
+        <td className="py-3 px-4 text-xs text-center">
+          {isOutOfStock ? (
+            <span className="text-red-500 font-medium text-[11px]">
+              Out of Stock
+            </span>
+          ) : (
+            <span className="text-gray-700 font-medium bg-gray-100 px-2 py-1 rounded-full text-[11px]">
+              {unsoldCount}
+            </span>
+          )}
+        </td>
+        <td className="py-3 px-4 text-xs text-center">
+          <button
+            className={`p-2 rounded-lg transition-all duration-200 ${
+              isDisabled
+                ? "text-gray-300 cursor-not-allowed"
+                : "text-gray-700 hover:bg-gray-100 hover:text-black active:scale-95"
+            }`}
+            onClick={() => !isDisabled && handleAddToPos(activeItem)}
+            disabled={isDisabled}
+          >
+            <ImPlus size={16} />
+          </button>
+        </td>
+      </tr>
+    );
+  };
 
   return (
     <div>
       {selectedImage && (
         <div
-          className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-70 z-50"
+          className="fixed inset-0 flex items-center justify-center bg-black/80 z-[100] backdrop-blur-sm"
           onClick={closeImageModal}
         >
           <img
             src={selectedImage}
             alt="Product full view"
-            className="max-w-[90%] max-h-[90%] rounded-lg shadow-2xl"
+            className="max-w-[90%] max-h-[90%] rounded-lg shadow-2xl animate-fadeIn"
             onClick={(e) => e.stopPropagation()}
           />
         </div>
       )}
 
       {isLoading ? (
-        <p className="text-center p-10">Loading Products...</p>
+        <div className="flex flex-col items-center justify-center py-20">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+          <p className="mt-4 text-sm text-gray-500 font-medium">
+            Loading products...
+          </p>
+        </div>
       ) : (
         <div className="p-2 md:p-4">
-          <div className="relative w-full mb-4">
+          <div className="w-full mb-4">
             <input
               ref={searchInputRef}
               type="text"
-              className="border rounded-md p-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500 global-search-input"
+              className="
+      w-full
+      pl-10 pr-4
+      py-3.5
+      text-base
+      border border-gray-300
+      rounded-lg
+      bg-white
+      placeholder-gray-400
+      focus:outline-none
+      focus:ring-1 focus:ring-gray-900
+      focus:border-gray-900
+      shadow-sm
+      transition-all
+    "
               placeholder="Search by Barcode, Item Code, or Product..."
               value={searchQuery}
               onChange={handleSearchChange}
               onKeyDown={handleSearchKeyDown}
             />
           </div>
-          {!priceType && !locationFilter && (
+
+          {!priceType && !selectedLocationId && (
             <div
-              className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4"
+              className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4 flex items-start gap-3"
               role="alert"
             >
-              <p className="font-bold">Action Required</p>
-              <p>Please select a price type and location to view products.</p>
+              <div className="text-amber-500 mt-0.5">ℹ️</div>
+              <div>
+                <p className="font-semibold text-sm text-amber-800">
+                  Setup Required
+                </p>
+                <p className="text-xs text-amber-700 mt-1">
+                  Please select a price type and location to begin.
+                </p>
+              </div>
             </div>
           )}
 
-          <div className="flex flex-row gap-2 mb-4">
+          <div className="flex flex-col sm:flex-row gap-3 mb-4">
             <select
-              className={`border rounded-md p-2 text-sm w-full md:w-auto md:flex-grow focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-300 ${
+              className={`border rounded-md px-3 py-2 text-sm w-full sm:w-auto sm:flex-grow focus:outline-none focus:ring-1 focus:ring-gray-900 transition duration-200 bg-white shadow-sm ${
                 !priceType
-                  ? "border-red-500 text-red-500 font-semibold"
-                  : "border-gray-300 text-black"
+                  ? "border-amber-300 text-amber-700"
+                  : "border-gray-300 text-gray-700"
               }`}
               value={priceType}
               onChange={handlePriceTypeChange}
@@ -445,271 +658,110 @@ const PaginationPos = ({
               <option value="reseller">Reseller</option>
               <option value="zeroRated">Zero Rated</option>
             </select>
+
             <select
-              className={`border rounded-md p-2 text-sm w-full md:w-auto md:flex-grow focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-300 ${
-                !locationFilter
-                  ? "border-red-500 text-red-500 font-semibold"
-                  : "border-gray-300 text-black"
+              className={`border rounded-md px-3 py-2 text-sm w-full sm:w-auto sm:flex-grow focus:outline-none focus:ring-1 focus:ring-gray-900 transition duration-200 bg-white shadow-sm ${
+                !selectedLocationId
+                  ? "border-amber-300 text-amber-700"
+                  : "border-gray-300 text-gray-700"
               }`}
-              value={locationFilter}
+              value={selectedLocationId}
               onChange={handleLocationChange}
             >
               <option value="" disabled>
                 Select Location
               </option>
-              <option value="All Locations">All Locations</option>
-              {uniqueLocations
-                .filter((loc) => loc !== "All Locations")
-                .map((loc) => (
-                  <option key={loc} value={loc}>
-                    {loc}
-                  </option>
-                ))}
+              {locations.map((loc) => (
+                <option key={loc.id} value={loc.id}>
+                  {loc.locationName}
+                </option>
+              ))}
             </select>
           </div>
 
           <div>
+            {/* MOBILE VIEW */}
             <div className="md:hidden space-y-3">
-              {/* *** FIX: Map over `currentItems` which is the correct, paginated list *** */}
-              {currentItems.map((item, index) => {
-                const allSold =
-                  item.batches.length > 0 &&
-                  item.batches.every((batch) =>
-                    batch.serialNumbers.every((serial) => serial.isSold)
-                  );
-                const unsoldCount = item.batches.reduce(
-                  (total, batch) =>
-                    total + batch.serialNumbers.filter((s) => !s.isSold).length,
-                  0
-                );
-                const isOutOfStock = allSold || unsoldCount === 0;
-                const lastModifiedItem = lastModifiedProducts.find(
-                  (p) => p.id === item.id
-                );
-                const isDisabled =
-                  isOutOfStock ||
-                  (lastModifiedItem &&
-                    lastModifiedItem.quantity >= unsoldCount);
-
-                return (
-                  <div
-                    key={`${item.id}-${index}-mobile`}
-                    className={`border rounded-md shadow p-1 bg-white ${
-                      isOutOfStock ? "bg-red-50 opacity-80" : "bg-white"
-                    }`}
-                  >
-                    <div className="flex gap-1">
-                      {/* Image with SOLD OUT label */}
-                      <div className="relative w-12 h-12 flex-shrink-0">
-                        {isOutOfStock && (
-                          <p className="absolute -top-1 -left-1 text-white bg-red-600 px-1 py-[1px] text-[8px] font-bold rounded-sm leading-none">
-                            SOLD OUT
-                          </p>
-                        )}
-                        <img
-                          src={item.productImage}
-                          alt={item.product}
-                          className="w-full h-full object-cover rounded-sm cursor-pointer"
-                          onClick={() => openImageModal(item.productImage)}
-                        />
-                      </div>
-
-                      {/* Product Info */}
-                      <div className="flex flex-col justify-between min-w-0 flex-grow text-[11px]">
-                        <div>
-                          <p className="font-semibold truncate leading-tight">
-                            {item.product}
-                          </p>
-                          <p className="text-gray-500 truncate">
-                            {item.itemCode}
-                          </p>
-                        </div>
-
-                        <div className="flex justify-between items-center mt-1">
-                          <div className="flex flex-col">
-                            {priceType && item.hasOwnProperty(priceType) ? (
-                              <span className="text-blue-600 font-bold text-[11px] leading-none">
-                                {formatCurrency(item[priceType])}
-                              </span>
-                            ) : (
-                              <span className="text-gray-400 text-[10px]">
-                                No Price
-                              </span>
-                            )}
-
-                            <span
-                              className={`text-[10px] ${
-                                isOutOfStock
-                                  ? "text-red-600 font-semibold"
-                                  : "text-gray-600"
-                              }`}
-                            >
-                              {isOutOfStock
-                                ? "Out of Stock"
-                                : `Stocks: ${unsoldCount}`}
-                            </span>
-                          </div>
-
-                          {/* Action Button */}
-                          <button
-                            className={`w-8 h-6 flex items-center justify-center rounded-full text-white text-[10px] transition-colors duration-300 ${
-                              isDisabled
-                                ? "bg-gray-400 cursor-not-allowed"
-                                : "bg-blue-500 hover:bg-blue-600"
-                            }`}
-                            onClick={() => !isDisabled && handleAddToPos(item)}
-                            disabled={isDisabled}
-                          >
-                            <ImPlus size={10} />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+              {currentGroups.map((group) => (
+                <ProductRow
+                  key={group[0].productId}
+                  group={group}
+                  isMobile={true}
+                />
+              ))}
             </div>
 
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full bg-white border border-gray-300">
+            {/* DESKTOP VIEW */}
+            <div className="hidden md:block overflow-x-auto rounded-lg border border-gray-200">
+              <table className="w-full bg-white">
                 <thead>
-                  <tr className="bg-gray-100">
-                    <th className="py-2 px-4 text-xs text-left">Product</th>
-                    <th className="py-2 px-4 text-xs text-center">Location</th>
-                    <th className="py-2 px-4 text-xs text-center">VAT Ex</th>
-                    <th className="py-2 px-4 text-xs text-center">VAT Inc</th>
-                    <th className="py-2 px-4 text-xs text-center">Reseller</th>
-                    <th className="py-2 px-4 text-xs text-center">
-                      Zero Rated
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="py-3 px-4 text-xs font-semibold text-gray-600 text-left uppercase tracking-wider">
+                      Product
                     </th>
-                    <th className="py-2 px-4 text-xs text-center">Stocks</th>
-                    <th className="py-2 px-4 text-xs text-center">Actions</th>
+                    <th className="py-3 px-4 text-xs font-semibold text-gray-600 text-center uppercase tracking-wider">
+                      Unit
+                    </th>
+                    <th className="py-3 px-4 text-xs font-semibold text-gray-600 text-center uppercase tracking-wider">
+                      Type
+                    </th>
+                    <th className="py-3 px-4 text-xs font-semibold text-gray-600 text-center uppercase tracking-wider">
+                      VAT Ex
+                    </th>
+                    <th className="py-3 px-4 text-xs font-semibold text-gray-600 text-center uppercase tracking-wider">
+                      VAT Inc
+                    </th>
+                    <th className="py-3 px-4 text-xs font-semibold text-gray-600 text-center uppercase tracking-wider">
+                      Reseller
+                    </th>
+                    <th className="py-3 px-4 text-xs font-semibold text-gray-600 text-center uppercase tracking-wider">
+                      Stocks
+                    </th>
+                    <th className="py-3 px-4 text-xs font-semibold text-gray-600 text-center uppercase tracking-wider">
+                      Action
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {/* *** FIX: Map over `currentItems` which is the correct, paginated list *** */}
-                  {currentItems.map((item, index) => {
-                    const allSold =
-                      item.batches.length > 0 &&
-                      item.batches.every((b) =>
-                        b.serialNumbers.every((s) => s.isSold)
-                      );
-                    const unsoldCount = item.batches.reduce(
-                      (total, batch) =>
-                        total +
-                        batch.serialNumbers.filter((s) => !s.isSold).length,
-                      0
-                    );
-                    const isOutOfStock = allSold || unsoldCount === 0;
-                    const lastModifiedItem = lastModifiedProducts.find(
-                      (p) => p.id === item.id
-                    );
-                    const isDisabled =
-                      isOutOfStock ||
-                      (lastModifiedItem &&
-                        lastModifiedItem.quantity >= unsoldCount);
-
-                    return (
-                      <tr
-                        key={`${item.id}-${index}`}
-                        className={`border-t border-gray-200 hover:bg-gray-50 ${
-                          isOutOfStock ? "bg-red-50" : ""
-                        }`}
+                  {currentGroups.map((group) => (
+                    <ProductRow
+                      key={group[0].productId}
+                      group={group}
+                      isMobile={false}
+                    />
+                  ))}
+                  {currentGroups.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan="8"
+                        className="py-12 text-center text-gray-400 text-sm"
                       >
-                        <td className="py-2 px-4 text-xs text-left">
-                          <div className="flex items-center gap-3">
-                            <img
-                              src={item.productImage}
-                              alt={item.product}
-                              className="w-12 h-12 object-cover rounded cursor-pointer"
-                              onClick={() => openImageModal(item.productImage)}
-                            />
-                            <div>
-                              <p className="font-semibold">{item.product}</p>
-                              <p className="text-gray-500">{item.itemCode}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-2 px-4 text-xs text-center">
-                          {item.location}
-                        </td>
-                        <td
-                          className={`py-2 px-4 text-xs text-center font-mono ${
-                            priceType === "vatEx" ? "bg-blue-100 font-bold" : ""
-                          }`}
-                        >
-                          {formatCurrency(item.vatEx)}
-                        </td>
-                        <td
-                          className={`py-2 px-4 text-xs text-center font-mono ${
-                            priceType === "vatInc"
-                              ? "bg-blue-100 font-bold"
-                              : ""
-                          }`}
-                        >
-                          {formatCurrency(item.vatInc)}
-                        </td>
-                        <td
-                          className={`py-2 px-4 text-xs text-center font-mono ${
-                            priceType === "reseller"
-                              ? "bg-blue-100 font-bold"
-                              : ""
-                          }`}
-                        >
-                          {formatCurrency(item.reseller)}
-                        </td>
-                        <td
-                          className={`py-2 px-4 text-xs text-center font-mono ${
-                            priceType === "zeroRated"
-                              ? "bg-blue-100 font-bold"
-                              : ""
-                          }`}
-                        >
-                          {formatCurrency(item.zeroRated)}
-                        </td>
-                        <td className="py-2 px-4 text-xs text-center">
-                          {isOutOfStock ? (
-                            <span className="text-red-500 font-semibold">
-                              Out of Stock
-                            </span>
-                          ) : (
-                            <span>{unsoldCount}</span>
-                          )}
-                        </td>
-                        <td className="py-2 px-4 text-xs text-center">
-                          <button
-                            className={`text-blue-500 hover:text-primeColor duration-300 ${
-                              isDisabled ? "opacity-50 cursor-not-allowed" : ""
-                            }`}
-                            onClick={() => !isDisabled && handleAddToPos(item)}
-                            disabled={isDisabled}
-                          >
-                            <ImPlus size={18} />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                        {searchQuery
+                          ? "No products found matching your search."
+                          : "No products available."}
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
           </div>
-          <div className="flex justify-center md:justify-end items-center py-6">
+          <div className="flex justify-center md:justify-end items-center py-4 mt-2">
             <ReactPaginate
-              // *** FIX: Add forcePage prop to reset the displayed page when filters change ***
               forcePage={pageCount > 0 ? itemOffset / itemsPerPage : -1}
-              nextLabel="→"
-              previousLabel="←"
+              nextLabel=">"
+              previousLabel="<"
               onPageChange={handlePageClick}
               pageRangeDisplayed={2}
               marginPagesDisplayed={1}
               pageCount={pageCount}
-              pageLinkClassName="w-8 h-8 text-sm border-[1px] border-lightColor hover:border-gray-500 duration-300 flex justify-center items-center"
-              pageClassName="mx-0.5"
-              previousLinkClassName="w-8 h-8 border-[1px] border-lightColor hover:border-gray-500 duration-300 flex justify-center items-center rounded-md"
-              nextLinkClassName="w-8 h-8 border-[1px] border-lightColor hover:border-gray-500 duration-300 flex justify-center items-center rounded-md"
-              containerClassName="flex text-base font-semibold font-titleFont items-center"
-              activeClassName="bg-black text-white"
+              pageLinkClassName="w-8 h-8 text-xs font-medium border border-gray-200 hover:bg-gray-50 hover:border-gray-300 rounded-md flex justify-center items-center transition-all text-gray-600"
+              pageClassName="mx-1"
+              previousLinkClassName="w-8 h-8 border border-gray-200 hover:bg-gray-50 rounded-md flex justify-center items-center text-gray-500 text-xs"
+              nextLinkClassName="w-8 h-8 border border-gray-200 hover:bg-gray-50 rounded-md flex justify-center items-center text-gray-500 text-xs"
+              containerClassName="flex items-center"
+              activeLinkClassName="!bg-gray-900 !text-white !border-gray-900 shadow-sm"
+              disabledLinkClassName="opacity-40 cursor-not-allowed"
             />
           </div>
         </div>

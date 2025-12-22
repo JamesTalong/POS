@@ -1,61 +1,95 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useMemo,
+} from "react";
 import { ToastContainer, toast } from "react-toastify";
-import Loader from "../../loader/Loader";
 import axios from "axios";
-import CustomerModal from "./Modals/CustomerModal";
-import TransactionDetailsModal from "./Modals/TransactionDetailsModal";
-import ProductModal from "./Modals/ProductModal";
 import { useReactToPrint } from "react-to-print";
-import PrintInternal from "./TransactionsModule/PrintTransaction/PrintInternal";
-import PrintReceipt from "./TransactionsModule/PrintTransaction/PrintReceipt";
 import {
-  faPrint,
-  faReceipt,
-  faRecycle,
-  faEllipsisV,
-} from "@fortawesome/free-solid-svg-icons";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import Pagination from "../Pagination";
-import { domain } from "../../../security";
-import PrintThermal from "./TransactionsModule/PrintTransaction/PrintThermal";
+  Search,
+  FileText,
+  RotateCcw,
+  Receipt,
+  Filter,
+  Download,
+  Calendar,
+  MapPin,
+  Ban,
+} from "lucide-react";
+
+// Redux & Security
 import { useSelector } from "react-redux";
-import { selectUserID, selectFullName } from "../../../redux/IchthusSlice";
-import SalesReportPDFComponent from "./SalesReportPDFComponent/SalesReportPDFComponent";
-import "react-datepicker/dist/react-datepicker.css";
+import { selectUserID, selectUserName } from "../../../redux/IchthusSlice";
+import { domain } from "../../../security";
+
+// Components
+import Loader from "../../loader/Loader";
+import Pagination from "../Pagination";
+
+// Modals & Print Components
+import CustomerModal from "./Modals/CustomerModal";
 import ReportModal from "./Modals/ReportModal";
+import RevertTransactionModal from "./Modals/RevertTransactionModal";
+import TransactionDetailsModal from "./TransactionDetailsModal";
+import PrintReceipt from "./TransactionsModule/PrintTransaction/PrintReceipt";
+import PrintThermal from "./TransactionsModule/PrintTransaction/PrintThermal";
+import SalesReportPDFComponent from "./SalesReportPDFComponent/SalesReportPDFComponent";
+
+import "react-datepicker/dist/react-datepicker.css";
 
 const Transactions = () => {
   // --- STATES ---
   const [transactionData, setTransactionData] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Selection States
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [selectedTransaction, setSelectedTransaction] = useState(null);
-  const [Print, setPrint] = useState(null);
-  const [Receipt, setReceipt] = useState(null);
+
+  // Print States
+  const [ReceiptData, setReceiptData] = useState(null);
   const [receiptThermal, setReceiptThermal] = useState(null);
-  const [selectedProducts, setSelectedProducts] = useState(null);
-  const [transactionId, setTransactionId] = useState(null);
+
+  // Pagination & Filters
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(5);
+  const [itemsPerPage] = useState(10);
   const [searchTerm, setSearchTerm] = useState("");
   const [locations, setLocations] = useState([]);
   const [selectedLocationId, setSelectedLocationId] = useState("");
   const [mySelectedLocation, setMySelectedLocation] = useState("");
+
+  // Default set to "my"
+  const [transactionView, setTransactionView] = useState("my");
+
+  const [sortConfig, setSortConfig] = useState({
+    key: "id",
+    direction: "descending",
+  });
+
+  // Report States
   const [reportType, setReportType] = useState("daily");
   const [selectedReportDate, setSelectedReportDate] = useState(new Date());
   const [reportPayload, setReportPayload] = useState(null);
   const [isSalesReportModalOpen, setIsSalesReportModalOpen] = useState(false);
   const [reportLocationName, setReportLocationName] = useState("");
-  const userID = useSelector(selectUserID);
-  const fullName = useSelector(selectFullName);
-  const [transactionView, setTransactionView] = useState("all");
-  const [sortConfig, setSortConfig] = useState({
-    key: "date",
-    direction: "descending",
-  });
-  const [openMenuId, setOpenMenuId] = useState(null); // For mobile dropdown
 
-  // --- DATA FETCHING AND LOGIC ---
+  // Revert Modal
+  const [isRevertModalOpen, setIsRevertModalOpen] = useState(false);
+  const [revertTargetId, setRevertTargetId] = useState(null);
+
+  // Redux
+  const userID = useSelector(selectUserID);
+  const fullName = useSelector(selectUserName);
+
+  // Refs for Printing
+  const printReceiptRef = useRef();
+  const printThermalRef = useRef();
+  const salesReportRef = useRef();
+
+  // --- DATA FETCHING ---
   const fetchLocations = useCallback(async () => {
     try {
       const res = await axios.get(`${domain}/api/Locations`);
@@ -68,6 +102,7 @@ const Transactions = () => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     let apiUrl;
+
     if (transactionView === "my") {
       if (userID) {
         apiUrl = `${domain}/api/Transactions/UserId/${userID}`;
@@ -81,10 +116,12 @@ const Transactions = () => {
         ? `${domain}/api/Transactions/ByLocation/${selectedLocationId}`
         : `${domain}/api/Transactions`;
     }
+
     try {
       const response = await axios.get(apiUrl);
       setTransactionData(response.data);
     } catch (error) {
+      console.error(error);
       toast.error("Failed to fetch transactions.");
     } finally {
       setLoading(false);
@@ -99,28 +136,13 @@ const Transactions = () => {
     fetchLocations();
   }, [fetchLocations]);
 
-  const revertTransaction = async (id, fullName) => {
-    if (!window.confirm("Are you sure you want to revert this?")) return;
-    try {
-      await axios.post(
-        `${domain}/api/Transactions/revert/${id}`,
-        { voidBy: fullName },
-        { headers: { "Content-Type": "application/json" } }
-      );
-      toast.success("Successfully Reverted!");
-      fetchData();
-    } catch (error) {
-      toast.error("Failed to revert transaction.");
-    }
-  };
-
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-
+  // --- HANDLERS ---
   const handleSearchChange = (event) => {
     setSearchTerm(event.target.value);
     setCurrentPage(1);
   };
+
+  const paginate = (pageNumber) => setCurrentPage(pageNumber);
 
   const handleSort = (key) => {
     let direction = "ascending";
@@ -130,7 +152,60 @@ const Transactions = () => {
     setSortConfig({ key, direction });
   };
 
-  const myLocationsOptions = React.useMemo(() => {
+  const openRevertModal = (e, id) => {
+    e.stopPropagation();
+    setRevertTargetId(id);
+    setIsRevertModalOpen(true);
+  };
+
+  const handleRevertConfirm = async (id, condition) => {
+    try {
+      await axios.post(
+        `${domain}/api/Transactions/revert/${id}`,
+        {
+          voidBy: fullName,
+          returnCondition: condition,
+        },
+        { headers: { "Content-Type": "application/json" } }
+      );
+      toast.success(
+        `Successfully Reverted as ${condition === "GOOD" ? "Good" : "Bad"}!`
+      );
+      fetchData();
+    } catch (error) {
+      console.error(error);
+      toast.error(
+        error.response?.data?.message || "Failed to revert transaction."
+      );
+    }
+  };
+
+  const handlePrintReceipt = useReactToPrint({
+    content: () => printReceiptRef.current,
+    documentTitle: "Receipt",
+  });
+  const handlePrintThermal = useReactToPrint({
+    content: () => printThermalRef.current,
+    documentTitle: "Thermal Receipt",
+  });
+  const handlePrintSalesReport = useReactToPrint({
+    content: () => salesReportRef.current,
+    documentTitle: "Sales Report",
+    onAfterPrint: () => setReportPayload(null),
+  });
+
+  const triggerPrint = (e, type, transaction) => {
+    e.stopPropagation();
+    if (type === "thermal") {
+      setReceiptThermal(transaction);
+      setTimeout(handlePrintThermal, 300);
+    } else if (type === "receipt") {
+      setReceiptData(transaction);
+      setTimeout(handlePrintReceipt, 300);
+    }
+  };
+
+  const myLocationsOptions = useMemo(() => {
     if (transactionView === "my" && transactionData.length > 0) {
       const uniqueLocations = new Map();
       transactionData.forEach((t) => {
@@ -145,101 +220,67 @@ const Transactions = () => {
     return [];
   }, [transactionData, transactionView]);
 
-  const sortedAndFilteredTransactions = React.useMemo(() => {
-    let transactionsToFilter = [...transactionData];
+  const sortedAndFilteredTransactions = useMemo(() => {
+    let data = [...transactionData];
     if (sortConfig !== null) {
-      transactionsToFilter.sort((a, b) => {
+      data.sort((a, b) => {
         if (sortConfig.key === "date") {
           const dateA = new Date(a.date);
           const dateB = new Date(b.date);
-          if (dateA < dateB)
-            return sortConfig.direction === "ascending" ? -1 : 1;
-          if (dateA > dateB)
-            return sortConfig.direction === "ascending" ? 1 : -1;
-          return 0;
+          return sortConfig.direction === "ascending"
+            ? dateA - dateB
+            : dateB - dateA;
+        } else if (sortConfig.key === "id") {
+          return sortConfig.direction === "ascending"
+            ? a.id - b.id
+            : b.id - a.id;
         } else {
-          const valA = a[sortConfig.key],
-            valB = b[sortConfig.key];
-          if (typeof valA === "string" && typeof valB === "string")
+          const valA = a[sortConfig.key] || "";
+          const valB = b[sortConfig.key] || "";
+          if (typeof valA === "string") {
             return sortConfig.direction === "ascending"
               ? valA.localeCompare(valB)
               : valB.localeCompare(valA);
-          if (valA < valB) return sortConfig.direction === "ascending" ? -1 : 1;
-          if (valA > valB) return sortConfig.direction === "ascending" ? 1 : -1;
-          return 0;
+          }
+          return sortConfig.direction === "ascending"
+            ? valA - valB
+            : valB - valA;
         }
       });
     }
+
     if (searchTerm) {
-      transactionsToFilter = transactionsToFilter.filter(
+      const lowerTerm = searchTerm.toLowerCase();
+      data = data.filter(
         (t) =>
-          t.customer?.customerName
-            ?.toLowerCase()
-            .includes(searchTerm.toLowerCase()) ||
-          t.id.toString().includes(searchTerm)
+          t.customer?.customerName?.toLowerCase().includes(lowerTerm) ||
+          t.id.toString().includes(lowerTerm) ||
+          t.fullName?.toLowerCase().includes(lowerTerm)
       );
     }
-    if (transactionView === "all" && selectedLocationId)
-      transactionsToFilter = transactionsToFilter.filter(
-        (t) => t.locationId === parseInt(selectedLocationId)
-      );
-    else if (transactionView === "my" && mySelectedLocation)
-      transactionsToFilter = transactionsToFilter.filter(
-        (t) => t.locationId === parseInt(mySelectedLocation)
-      );
-    return transactionsToFilter;
-  }, [
-    transactionData,
-    sortConfig,
-    searchTerm,
-    transactionView,
-    selectedLocationId,
-    mySelectedLocation,
-  ]);
+
+    return data;
+  }, [transactionData, sortConfig, searchTerm]);
 
   const currentItems = sortedAndFilteredTransactions.slice(
-    indexOfFirstItem,
-    indexOfLastItem
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
   );
 
-  const printInternalRef = useRef();
-  const printReceiptRef = useRef();
-  const printThermalRef = useRef();
-  const salesReportRef = useRef();
-
-  const handlePrintInternal = useReactToPrint({
-    content: () => printInternalRef.current,
-    documentTitle: "Internal Transaction",
-  });
-  const handlePrintReceipt = useReactToPrint({
-    content: () => printReceiptRef.current,
-    documentTitle: "Receipt",
-  });
-  const handlePrintThermal = useReactToPrint({
-    content: () => printThermalRef.current,
-    documentTitle: "Receipt",
-  });
-  const handlePrintSalesReport = useReactToPrint({
-    content: () => salesReportRef.current,
-    documentTitle: "Sales Report",
-    onAfterPrint: () => setReportPayload(null),
-  });
-
-  const paginate = (pageNumber) => setCurrentPage(pageNumber);
-
   useEffect(() => {
-    let newReportLocationName = "All Locations";
-    const findLocationName = (id, options, nameKey) =>
-      options.find((loc) => loc.id.toString() === id.toString())?.[nameKey];
-    if (transactionView === "all" && selectedLocationId)
-      newReportLocationName =
-        findLocationName(selectedLocationId, locations, "locationName") ||
+    let name = "All Locations";
+    const findName = (id, list, key) =>
+      list.find((l) => l.id.toString() === id.toString())?.[key];
+    if (transactionView === "all" && selectedLocationId) {
+      name =
+        findName(selectedLocationId, locations, "locationName") ||
         "All Locations";
-    else if (transactionView === "my" && mySelectedLocation)
-      newReportLocationName =
-        findLocationName(mySelectedLocation, myLocationsOptions, "name") ||
+    } else if (transactionView === "my" && mySelectedLocation) {
+      name =
+        findName(mySelectedLocation, myLocationsOptions, "name") ||
         "All Locations";
-    setReportLocationName(newReportLocationName);
+    }
+    setReportLocationName(name);
   }, [
     selectedLocationId,
     mySelectedLocation,
@@ -248,38 +289,76 @@ const Transactions = () => {
     transactionView,
   ]);
 
-  // --- RENDER ---
+  const VoidIndicator = () => (
+    <div className="flex items-center gap-1 text-red-600 font-bold text-xs uppercase mt-1">
+      <Ban size={14} strokeWidth={3} />
+      <span>Void</span>
+    </div>
+  );
+
   return (
-    <div>
-      <div className="px-4 sm:px-8 py-6 max-w-7xl mx-auto">
-        <ToastContainer />
-        <ReportModal
-          isSalesReportModalOpen={isSalesReportModalOpen}
-          setIsSalesReportModalOpen={setIsSalesReportModalOpen}
-          transactionData={sortedAndFilteredTransactions}
-          reportType={reportType}
-          setReportType={setReportType}
-          selectedReportDate={selectedReportDate}
-          setSelectedReportDate={setSelectedReportDate}
-          handlePrintSalesReport={handlePrintSalesReport}
-          setReportPayload={setReportPayload}
-          selectedLocationName={reportLocationName}
-        />
-        <button
-          onClick={() => setIsSalesReportModalOpen(true)}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md"
-        >
-          Generate Sales Report
-        </button>
-        <h1 className="text-3xl lg:text-4xl font-bold text-center text-gray-800 my-8">
-          {transactionView === "all" ? "All Transactions" : "My Transactions"}
-        </h1>
-        <div className="flex flex-col sm:flex-row sm:items-end gap-4 w-full mb-6">
-          <div className="w-full sm:w-1/4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Location
-            </label>
+    <div className="min-h-screen bg-slate-50/50 pb-12">
+      <ToastContainer position="top-right" autoClose={3000} />
+
+      {/* --- Sticky Header --- */}
+      <div className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                <FileText className="text-indigo-600" />
+                {transactionView === "all"
+                  ? "All Transactions"
+                  : "My Transactions"}
+              </h1>
+              <p className="text-sm text-slate-500 mt-1">
+                Overview of sales, payments, and inventory movement.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <div className="flex bg-slate-100 p-1 rounded-lg">
+                {/* --- CHANGED HERE: "My" button is now FIRST --- */}
+                <button
+                  onClick={() => setTransactionView("my")}
+                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
+                    transactionView === "my"
+                      ? "bg-white text-indigo-600 shadow-sm"
+                      : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  My
+                </button>
+                <button
+                  onClick={() => setTransactionView("all")}
+                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
+                    transactionView === "all"
+                      ? "bg-white text-indigo-600 shadow-sm"
+                      : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  All
+                </button>
+              </div>
+
+              <button
+                onClick={() => setIsSalesReportModalOpen(true)}
+                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow-sm transition-all"
+              >
+                <Download size={18} />
+                <span className="hidden sm:inline">Sales Report</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
+        {/* --- Filters --- */}
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 grid md:grid-cols-3 gap-4 mb-6">
+          <div className="relative">
+            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <select
+              className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-slate-600 bg-white"
               value={
                 transactionView === "all"
                   ? selectedLocationId
@@ -290,9 +369,7 @@ const Transactions = () => {
                   ? setSelectedLocationId(e.target.value)
                   : setMySelectedLocation(e.target.value)
               }
-              className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
             >
-              <option value="">All Locations</option>
               {(transactionView === "all" ? locations : myLocationsOptions).map(
                 (loc) => (
                   <option key={loc.id} value={loc.id}>
@@ -302,424 +379,199 @@ const Transactions = () => {
               )}
             </select>
           </div>
-          <div className="w-full sm:w-1/2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Search
-            </label>
+
+          <div className="relative md:col-span-2">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Search by customer name or ID"
-              className="w-full p-3 border border-gray-300 rounded-lg shadow-sm"
+              placeholder="Search by ID, Customer Name, or Staff..."
+              className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition-shadow"
               value={searchTerm}
               onChange={handleSearchChange}
             />
           </div>
         </div>
-      </div>
-      <div className="sm:w-1/3">
-        <div className={`inline-flex rounded-t-md overflow-hidden`}>
-          {["all", "my"].map((type) => (
-            <label
-              key={type}
-              className={`cursor-pointer px-5 py-2 text-sm select-none ${
-                transactionView === type
-                  ? type === "all"
-                    ? "bg-blue-600 text-white"
-                    : "bg-blue-200 text-blue-800"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              }`}
-            >
-              <input
-                type="radio"
-                className="sr-only"
-                value={type}
-                checked={transactionView === type}
-                onChange={(e) => setTransactionView(e.target.value)}
-              />
-              <span className="capitalize">{type} Transactions</span>
-            </label>
-          ))}
-        </div>
-      </div>
 
-      <div
-        className={`relative shadow-md sm:rounded-b-lg border ${
-          transactionView === "all" ? "border-blue-600" : "border-blue-200"
-        }`}
-        style={{ borderTopWidth: 0 }}
-      >
-        {loading && <Loader />}
-
-        {/* --- DESKTOP TABLE VIEW --- */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left text-gray-700 hidden md:table">
-            <thead
-              className={`text-xs uppercase ${
-                transactionView === "all"
-                  ? "bg-blue-600 text-white"
-                  : "bg-blue-200 text-blue-800"
-              }`}
-            >
-              <tr>
-                <th
-                  scope="col"
-                  className="px-6 py-3 cursor-pointer"
-                  onClick={() => handleSort("id")}
-                >
-                  Transaction / Date
-                </th>
-                <th scope="col" className="px-6 py-3">
-                  Customer Name
-                </th>
-                <th scope="col" className="px-6 py-3">
-                  Sales Rep
-                </th>
-                <th scope="col" className="px-6 py-3">
-                  Items Purchased
-                </th>
-                <th scope="col" className="px-6 py-3">
-                  Location
-                </th>
-                <th scope="col" className="px-6 py-3">
-                  Prepared / Checked By
-                </th>
-                <th scope="col" className="px-6 py-3">
-                  Payment / Terms
-                </th>
-                <th scope="col" className="px-6 py-3">
-                  Total Amount
-                </th>
-                <th scope="col" className="px-6 py-3">
-                  Action
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {!loading &&
-                currentItems.map((transaction) => (
-                  <tr
-                    key={transaction.id}
-                    className={`${
-                      transaction?.isVoid
-                        ? "bg-red-100 hover:bg-red-200"
-                        : "odd:bg-white even:bg-gray-50 hover:bg-gray-100"
-                    } border-b transition-colors`}
-                  >
-                    <th
-                      scope="row"
-                      className={`px-6 py-4 font-medium whitespace-nowrap ${
-                        transaction?.isVoid ? "text-red-900" : "text-gray-900"
+        {/* --- Content --- */}
+        {loading ? (
+          <div className="flex justify-center items-center py-20">
+            <Loader />
+          </div>
+        ) : (
+          <>
+            {/* Desktop Table View */}
+            <div className="hidden md:block bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+              <table className="w-full text-sm text-left text-slate-600">
+                <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th className="px-6 py-4">Transaction ID / Date</th>
+                    <th className="px-6 py-4">Customer</th>
+                    <th className="px-6 py-4">Summary</th>
+                    <th className="px-6 py-4">Location / Staff</th>
+                    <th className="px-6 py-4 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {currentItems.map((item) => (
+                    <tr
+                      key={item.id}
+                      onClick={() => setSelectedTransaction(item)}
+                      className={`cursor-pointer transition hover:bg-indigo-50/40 ${
+                        item.isVoid ? "bg-red-500/40" : ""
                       }`}
                     >
-                      <div className="font-bold text-base">
-                        {transaction.id} {transaction.isVoid && "(VOID)"}
-                      </div>
-                      <div className="font-normal text-xs text-gray-500">
-                        {new Date(transaction.date).toLocaleDateString(
-                          "en-US",
-                          { year: "numeric", month: "short", day: "numeric" }
-                        )}
-                      </div>
-                    </th>
-                    <td
-                      className="px-6 py-4 font-medium text-blue-600 hover:underline cursor-pointer"
-                      onClick={() =>
-                        transaction?.customer &&
-                        setSelectedCustomer(transaction.customer)
-                      }
-                    >
-                      {transaction?.customer?.customerName || "N/A"}
-                    </td>
-                    <td className="px-6 py-4">
-                      {transaction?.fullName || "N/A"}
-                    </td>
-                    <td
-                      className="px-6 py-4 cursor-pointer"
-                      onClick={() => {
-                        if (transaction?.purchasedProducts?.length > 0) {
-                          setSelectedProducts(transaction.purchasedProducts);
-                          setTransactionId(transaction.id);
-                        }
-                      }}
-                    >
-                      {transaction?.purchasedProducts?.length > 0 ? (
-                        transaction.purchasedProducts.map((p) => (
-                          <div key={p.id} className="text-xs">
-                            {p.quantity}x {p.pricelist?.productName}
-                          </div>
-                        ))
-                      ) : (
-                        <span className="text-gray-400">No items</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      {transaction?.location || "N/A"}
-                    </td>
-                    <td className="px-6 py-4">
-                      {transaction?.preparedBy || "N/A"} /{" "}
-                      {transaction?.checkedBy || "N/A"}
-                    </td>
-                    <td className="px-6 py-4">
-                      {transaction?.paymentType || "N/A"} (
-                      {transaction?.terms || "N/A"})
-                    </td>
-                    <td
-                      className="px-6 py-4 font-bold text-blue-600 hover:underline cursor-pointer"
-                      onClick={() =>
-                        transaction && setSelectedTransaction(transaction)
-                      }
-                    >
-                      ₱{" "}
-                      {transaction?.totalAmount
-                        ? transaction.totalAmount.toFixed(2)
-                        : "0.00"}
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="flex flex-col space-y-2 w-40">
-                        <button
-                          onClick={() =>
-                            !transaction?.isVoid &&
-                            revertTransaction(transaction.id, fullName)
-                          }
-                          disabled={transaction?.isVoid}
-                          className={`font-semibold py-2 px-3 text-xs rounded-lg shadow-md flex items-center justify-center gap-2 ${
-                            transaction?.isVoid
-                              ? "bg-slate-300 text-slate-500 cursor-not-allowed"
-                              : "bg-red-500 hover:bg-red-600 text-white"
-                          }`}
-                        >
-                          <FontAwesomeIcon icon={faRecycle} />{" "}
-                          {transaction?.isVoid ? "Voided" : "Void"}
-                        </button>
-                        {!transaction?.isVoid && (
-                          <button
-                            onClick={() => {
-                              setReceiptThermal(transaction);
-                              setTimeout(handlePrintThermal, 300);
-                            }}
-                            className="bg-teal-500 hover:bg-teal-600 text-white font-semibold py-2 px-3 text-xs rounded-lg shadow-md flex items-center justify-center gap-2"
-                          >
-                            <FontAwesomeIcon icon={faReceipt} /> Print Thermal
-                          </button>
-                        )}
-                        <button
-                          onClick={() => {
-                            setPrint(transaction);
-                            setTimeout(handlePrintInternal, 300);
-                          }}
-                          className="bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2 px-3 text-xs rounded-lg shadow-md flex items-center justify-center gap-2"
-                        >
-                          <FontAwesomeIcon icon={faPrint} /> Print Internal
-                        </button>
-                        {!transaction?.isVoid && (
-                          <button
-                            onClick={() => {
-                              setReceipt(transaction);
-                              setTimeout(handlePrintReceipt, 300);
-                            }}
-                            className="bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-3 text-xs rounded-lg shadow-md flex items-center justify-center gap-2"
-                          >
-                            <FontAwesomeIcon icon={faReceipt} /> Print Receipt
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* --- MOBILE CARD VIEW --- */}
-        <div className="md:hidden divide-y divide-gray-200">
-          {!loading &&
-            currentItems.map((transaction) => (
-              <div
-                key={transaction.id}
-                className={`p-4 ${
-                  transaction.isVoid ? "bg-red-50" : "bg-white"
-                }`}
-              >
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <p className="text-sm font-bold text-gray-800">
-                      #{transaction.id}{" "}
-                      {transaction.isVoid && (
-                        <span className="text-red-600 font-semibold">
-                          (VOID)
+                      <td className="px-6 py-4 align-middle">
+                        <span className="font-bold text-slate-800 text-lg block">
+                          #{item.id}
                         </span>
-                      )}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {new Date(transaction.date).toLocaleDateString("en-US", {
-                        year: "numeric",
-                        month: "long",
-                        day: "numeric",
-                      })}
-                    </p>
-                  </div>
-                  <div className="relative">
-                    <button
-                      onClick={() =>
-                        setOpenMenuId(
-                          openMenuId === transaction.id ? null : transaction.id
-                        )
-                      }
-                      className="p-2 text-gray-500 rounded-full hover:bg-gray-100"
-                    >
-                      <FontAwesomeIcon icon={faEllipsisV} />
-                    </button>
-                    {openMenuId === transaction.id && (
-                      <>
-                        <div
-                          className="fixed inset-0 z-10"
-                          onClick={() => setOpenMenuId(null)}
-                        ></div>
-                        <div className="absolute right-0 mt-2 w-56 bg-white rounded-md shadow-xl z-20 border">
-                          <div className="py-1">
-                            <button
-                              onClick={() =>
-                                !transaction?.isVoid &&
-                                revertTransaction(transaction.id, fullName)
-                              }
-                              disabled={transaction?.isVoid}
-                              className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 ${
-                                transaction.isVoid
-                                  ? "text-gray-400 cursor-not-allowed"
-                                  : "text-gray-700 hover:bg-gray-100"
-                              }`}
-                            >
-                              <FontAwesomeIcon
-                                icon={faRecycle}
-                                className="w-4"
-                              />{" "}
-                              {transaction.isVoid
-                                ? "Voided"
-                                : "Void Transaction"}
-                            </button>
-                            {!transaction?.isVoid && (
-                              <button
-                                onClick={() => {
-                                  setReceiptThermal(transaction);
-                                  setTimeout(handlePrintThermal, 300);
-                                  setOpenMenuId(null);
-                                }}
-                                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-3"
-                              >
-                                <FontAwesomeIcon
-                                  icon={faReceipt}
-                                  className="w-4"
-                                />{" "}
-                                Print Thermal
-                              </button>
-                            )}
-                            <button
-                              onClick={() => {
-                                setPrint(transaction);
-                                setTimeout(handlePrintInternal, 300);
-                                setOpenMenuId(null);
-                              }}
-                              className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-3"
-                            >
-                              <FontAwesomeIcon icon={faPrint} className="w-4" />{" "}
-                              Print Internal
-                            </button>
-                            {!transaction?.isVoid && (
-                              <button
-                                onClick={() => {
-                                  setReceipt(transaction);
-                                  setTimeout(handlePrintReceipt, 300);
-                                  setOpenMenuId(null);
-                                }}
-                                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-3"
-                              >
-                                <FontAwesomeIcon
-                                  icon={faReceipt}
-                                  className="w-4"
-                                />{" "}
-                                Print Receipt
-                              </button>
-                            )}
+                        {item.isVoid && <VoidIndicator />}
+                        <div className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                          <Calendar size={12} />{" "}
+                          {new Date(item.date).toLocaleDateString()}
+                        </div>
+                      </td>
+
+                      <td className="px-6 py-4 align-middle">
+                        <span className="font-bold text-indigo-700 block text-base">
+                          {item.customer?.customerName || "N/A"}
+                        </span>
+                        <span className="text-xs text-slate-400">
+                          {item.customer?.customerType || "Walk-In"}
+                        </span>
+                      </td>
+
+                      <td className="px-6 py-4 align-middle">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex justify-between w-40 text-xs">
+                            <span className="text-slate-500">Items:</span>
+                            <span className="font-semibold">
+                              {item.totalItems}
+                            </span>
+                          </div>
+                          <div className="flex justify-between w-40">
+                            <span className="font-bold text-slate-800 text-lg">
+                              ₱{item.totalAmount.toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="text-xs text-slate-500 italic">
+                            {item.paymentType}
                           </div>
                         </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-                  <div className="col-span-2">
-                    <p className="text-xs text-gray-500">Customer</p>
-                    <p
-                      className="font-medium text-blue-600"
-                      onClick={() =>
-                        transaction?.customer &&
-                        setSelectedCustomer(transaction.customer)
-                      }
-                    >
-                      {transaction.customer?.customerName || "N/A"}
-                    </p>
-                  </div>
-                  <div className="col-span-2">
-                    <p className="text-xs text-gray-500">Location</p>
-                    <p className="font-medium text-gray-700">
-                      {transaction.location || "N/A"}
-                    </p>
-                  </div>
-                  <div
-                    className="col-span-2 cursor-pointer"
-                    onClick={() => {
-                      if (transaction?.purchasedProducts?.length > 0) {
-                        setSelectedProducts(transaction.purchasedProducts);
-                        setTransactionId(transaction.id);
-                      }
-                    }}
-                  >
-                    <p className="text-xs text-gray-500 mb-1">
-                      Items Purchased
-                    </p>
-                    <div className="text-sm text-gray-800 space-y-1">
-                      {transaction.purchasedProducts?.length > 0 ? (
-                        transaction.purchasedProducts.map((p) => (
-                          <div key={p.id}>
-                            {p.quantity}x{" "}
-                            {p.pricelist?.productName || "Unknown"}
+                      </td>
+
+                      <td className="px-6 py-4 align-middle text-xs">
+                        <div className="flex items-center gap-1 mb-1 font-medium text-slate-700">
+                          <MapPin size={14} className="text-indigo-500" />{" "}
+                          {item.location}
+                        </div>
+                        <div className="text-slate-500">
+                          By: {item.fullName}
+                        </div>
+                      </td>
+
+                      <td className="px-6 py-4 align-middle text-center">
+                        <div className="flex items-center justify-center gap-2">
+                          {/* Print Buttons */}
+                          <div className="flex bg-slate-100 rounded-lg p-1">
+                            <button
+                              onClick={(e) => triggerPrint(e, "thermal", item)}
+                              title="Print Thermal"
+                              className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-white rounded transition-colors shadow-sm"
+                            >
+                              <Receipt size={16} />
+                            </button>
+                            <button
+                              onClick={(e) => triggerPrint(e, "receipt", item)}
+                              title="Print Full Receipt"
+                              className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-white rounded transition-colors shadow-sm"
+                            >
+                              <FileText size={16} />
+                            </button>
                           </div>
-                        ))
-                      ) : (
-                        <p className="text-gray-500">No items</p>
+
+                          <div className="w-px h-6 bg-slate-200 mx-1"></div>
+
+                          {/* Void Button (Text + Icon) */}
+                          {!item.isVoid && (
+                            <button
+                              onClick={(e) => openRevertModal(e, item.id)}
+                              title="Void Transaction"
+                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 hover:text-red-700 rounded-md transition-colors border border-red-100"
+                            >
+                              <RotateCcw size={14} />
+                              Void
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {currentItems.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan="5"
+                        className="px-6 py-10 text-center text-slate-400"
+                      >
+                        No transactions found matching your criteria.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Card View */}
+            <div className="md:hidden space-y-4">
+              {currentItems.map((item) => (
+                <div
+                  key={item.id}
+                  onClick={() => setSelectedTransaction(item)}
+                  className={`bg-white p-4 rounded-xl shadow-sm border border-slate-200 active:scale-[0.98] transition-transform ${
+                    item.isVoid ? "border-l-4 border-l-red-500" : ""
+                  }`}
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <span className="font-bold text-lg text-slate-800">
+                        #{item.id}
+                      </span>
+                      {item.isVoid && (
+                        <span className="text-red-600 text-xs font-bold uppercase ml-2">
+                          VOID
+                        </span>
                       )}
                     </div>
+                    <span className="text-lg font-bold text-indigo-600">
+                      ₱{item.totalAmount.toFixed(2)}
+                    </span>
                   </div>
-                  <div
-                    className="col-span-2 text-right mt-2 cursor-pointer"
-                    onClick={() =>
-                      transaction && setSelectedTransaction(transaction)
-                    }
-                  >
-                    <p className="text-sm text-gray-500">Total Amount</p>
-                    <p className="text-2xl font-bold text-indigo-600">
-                      ₱{" "}
-                      {transaction.totalAmount
-                        ? transaction.totalAmount.toFixed(2)
-                        : "0.00"}
-                    </p>
+                  <div className="text-sm font-medium text-slate-700 mb-1">
+                    {item.customer?.customerName || "Walk-In"}
+                  </div>
+                  <div className="flex justify-between text-xs text-slate-500 mt-2">
+                    <span>{new Date(item.date).toLocaleDateString()}</span>
+                    <span>{item.totalItems} Items</span>
                   </div>
                 </div>
-              </div>
-            ))}
-        </div>
+              ))}
+            </div>
+
+            {/* Pagination */}
+            <div className="mt-6">
+              <Pagination
+                itemsPerPage={itemsPerPage}
+                totalItems={sortedAndFilteredTransactions.length}
+                currentPage={currentPage}
+                paginate={paginate}
+              />
+            </div>
+          </>
+        )}
       </div>
 
-      <Pagination
-        itemsPerPage={itemsPerPage}
-        totalItems={sortedAndFilteredTransactions.length}
-        currentPage={currentPage}
-        paginate={paginate}
-      />
-
-      <div style={{ display: "none" }}>
-        <PrintInternal ref={printInternalRef} transaction={Print} />
-        <PrintReceipt ref={printReceiptRef} transaction={Receipt} />
+      {/* --- Hidden Components for Printing --- */}
+      <div className="hidden">
+        <PrintReceipt ref={printReceiptRef} transaction={ReceiptData} />
         <PrintThermal ref={printThermalRef} transaction={receiptThermal} />
         {reportPayload && (
           <SalesReportPDFComponent
@@ -728,25 +580,40 @@ const Transactions = () => {
           />
         )}
       </div>
+
+      {/* --- Modals --- */}
       {selectedCustomer && (
         <CustomerModal
           customer={selectedCustomer}
           onClose={() => setSelectedCustomer(null)}
         />
       )}
-      {selectedTransaction && (
-        <TransactionDetailsModal
-          transaction={selectedTransaction}
-          onClose={() => setSelectedTransaction(null)}
-        />
-      )}
-      {selectedProducts && (
-        <ProductModal
-          products={selectedProducts}
-          transactionId={transactionId}
-          onClose={() => setSelectedProducts(null)}
-        />
-      )}
+
+      {/* THE NEW COMPONENT */}
+      <TransactionDetailsModal
+        transaction={selectedTransaction}
+        onClose={() => setSelectedTransaction(null)}
+      />
+
+      <RevertTransactionModal
+        isOpen={isRevertModalOpen}
+        transactionId={revertTargetId}
+        onClose={() => setIsRevertModalOpen(false)}
+        onConfirm={handleRevertConfirm}
+      />
+
+      <ReportModal
+        isSalesReportModalOpen={isSalesReportModalOpen}
+        setIsSalesReportModalOpen={setIsSalesReportModalOpen}
+        transactionData={sortedAndFilteredTransactions}
+        reportType={reportType}
+        setReportType={setReportType}
+        selectedReportDate={selectedReportDate}
+        setSelectedReportDate={setSelectedReportDate}
+        handlePrintSalesReport={handlePrintSalesReport}
+        setReportPayload={setReportPayload}
+        selectedLocationName={reportLocationName}
+      />
     </div>
   );
 };

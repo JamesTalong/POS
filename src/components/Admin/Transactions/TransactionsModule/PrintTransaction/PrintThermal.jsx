@@ -1,143 +1,188 @@
 import React from "react";
 
 const PrintThermal = React.forwardRef(({ transaction }, ref) => {
+  // 1. Safety Check
   if (!transaction) return null;
 
-  const formatCurrency = (amount) => `₱${amount.toFixed(2)}`;
+  const formatCurrency = (amount) => `₱${Number(amount || 0).toFixed(2)}`;
+
+  // Safe access to customer object
+  const customer = transaction.customer || {};
 
   return (
     <div
       ref={ref}
       style={{
-        width: "203px",
-        fontFamily: "monospace",
-        fontSize: "10px",
+        width: "100%",
+        maxWidth: "300px",
+        fontFamily: "'Courier New', Courier, monospace",
+        fontSize: "12px",
         color: "#000",
         backgroundColor: "#fff",
-        padding: "6px",
+        padding: "5px 0",
+        lineHeight: "1.2",
       }}
     >
-      <div style={{ textAlign: "center" }}>
-        <strong style={{ fontSize: "12px" }}>ICHTHUS TECHNOLOGY</strong>
+      {/* --- HEADER --- */}
+      <div style={{ textAlign: "center", marginBottom: "10px" }}>
+        <strong style={{ fontSize: "14px", display: "block" }}>
+          ICHTHUS TECHNOLOGY
+        </strong>
+        <span style={{ fontSize: "10px" }}>
+          Malvar Batangas / Malabon
+          <br />
+          (043) 341-9524 / 0968-5729481
+        </span>
         <br />
-        Malvar Batangas / Malabon
         <br />
-        (043) 341-9524 / 0968-5729481
-        <br />
-        {transaction.id && <div className="">ID: {transaction.id}</div>}
-        {transaction.date && (
-          <div>Date: {new Date(transaction.date).toLocaleString()}</div>
-        )}
-        -------------------------------
-        <br />
-        <strong>TRANSACTION RECEIPT</strong>
+        <strong
+          style={{ borderBottom: "1px solid #000", paddingBottom: "2px" }}
+        >
+          OFFICIAL RECEIPT
+        </strong>
       </div>
 
-      {/* Customer Info */}
-      <div style={{ marginBottom: "6px" }}>
-        <strong>Customer:</strong>
-        <br />
-        {transaction.customer.customerName && (
-          <>
-            {transaction.customer.customerName}
-            <br />
-          </>
-        )}
-        {transaction.customer.address && (
-          <>
-            {transaction.customer.address}
-            <br />
-          </>
-        )}
-        {transaction.customer.mobileNumber && (
-          <>
-            📞 {transaction.customer.mobileNumber}
-            <br />
-          </>
-        )}
-        {transaction.customer.tinNumber && (
-          <>
-            TIN: {transaction.customer.tinNumber}
-            <br />
-          </>
-        )}
+      {/* --- META DETAILS --- */}
+      <div style={{ fontSize: "10px", marginBottom: "8px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span>Trans #:</span>
+          <strong>{transaction.id}</strong>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span>Date:</span>
+          <span>
+            {new Date(transaction.date).toLocaleDateString()}{" "}
+            {new Date(transaction.date).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span>Cashier:</span>
+          <span>{transaction.fullName || "System"}</span>
+        </div>
       </div>
 
-      {/* Transaction Info */}
-      <div style={{ marginBottom: "6px" }}>
-        {transaction.terms && <div>Terms: {transaction.terms}</div>}
-        {transaction.preparedBy && (
-          <div>Prepared: {transaction.preparedBy}</div>
-        )}
-        {transaction.checkedBy && <div>Checked: {transaction.checkedBy}</div>}
-        {transaction.paymentType && (
-          <div>Payment: {transaction.paymentType}</div>
-        )}
+      <div style={{ borderTop: "1px dashed #000", margin: "5px 0" }} />
+
+      {/* --- CUSTOMER --- */}
+      <div style={{ marginBottom: "8px", fontSize: "11px" }}>
+        <strong>Customer Details:</strong>
+        <div style={{ paddingLeft: "5px" }}>
+          <div>{customer.customerName || "Walk-In Customer"}</div>
+          {customer.address && <div>{customer.address}</div>}
+          {customer.tinNumber && <div>TIN: {customer.tinNumber}</div>}
+        </div>
       </div>
 
-      <div style={{ borderTop: "1px dashed #000", margin: "4px 0" }} />
+      <div style={{ borderTop: "1px dashed #000", margin: "5px 0" }} />
 
-      {/* Items */}
+      {/* --- ITEMS TABLE --- */}
       {transaction.purchasedProducts?.length > 0 && (
-        <div style={{ marginBottom: "6px" }}>
-          <div className=" border-b-black">
-            <strong>Items</strong>
-            {transaction.purchasedProducts.map((product, index) => (
-              <div key={index} style={{ marginBottom: "4px" }}>
-                {product.pricelist?.productName}
-                <br />
-                Quantity {product.quantity}
-                <br />
-                Sub: {formatCurrency(product.subtotal)} | Less:{" "}
-                {formatCurrency(product.discountValue)}
-                {product.serialNumbers?.length > 0 && (
-                  <div style={{ marginTop: "2px", paddingLeft: "6px" }}>
-                    Serials:
-                    {product.serialNumbers.map((serial, i) => (
-                      <div key={i} style={{ fontSize: "9px" }}>
-                        • {serial.serialName}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div
-                  style={{ borderTop: "1px dashed #000", margin: "4px 0" }}
-                />
+        <div style={{ marginBottom: "8px" }}>
+          {transaction.purchasedProducts.map((product, index) => (
+            <div key={index} style={{ marginBottom: "6px" }}>
+              {/* FIX: Ensure productName is accessed directly */}
+              <div style={{ fontWeight: "bold" }}>
+                {product.productName || "Unknown Product"}
               </div>
-            ))}
-          </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>
+                  {product.quantity} x {formatCurrency(product.price)}
+                </span>
+                <span style={{ fontWeight: "bold" }}>
+                  {formatCurrency(product.subtotal)}
+                </span>
+              </div>
+
+              {/* Serials */}
+              {product.serialNumbers?.length > 0 && (
+                <div
+                  style={{
+                    fontSize: "9px",
+                    color: "#333",
+                    marginLeft: "10px",
+                    marginTop: "2px",
+                  }}
+                >
+                  S/N:{" "}
+                  {product.serialNumbers.map((s) => s.serialName).join(", ")}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Summary */}
-      <div style={{ marginBottom: "6px" }}>
-        <strong>Summary</strong>
-        {transaction.totalItems != null && (
-          <div>Total Items: {transaction.totalItems}</div>
+      <div style={{ borderTop: "1px solid #000", margin: "8px 0" }} />
+
+      {/* --- TOTALS --- */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span>VAT Amount:</span>
+          <span>{formatCurrency(transaction.vatAmount)}</span>
+        </div>
+
+        {Number(transaction.discountAmount) > 0 && (
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>Discount ({transaction.discountType}):</span>
+            <span>-{formatCurrency(transaction.discountAmount)}</span>
+          </div>
         )}
-        {transaction.totalAmount != null && (
-          <div>Gross Total: {formatCurrency(transaction.totalAmount)}</div>
-        )}
-        {transaction.discountAmount != null && (
-          <div>Discounts: {formatCurrency(transaction.discountAmount)}</div>
-        )}
-        {transaction.payment != null && (
-          <div>Payment: {formatCurrency(transaction.payment)}</div>
-        )}
-        {transaction.change != null && (
-          <div>Change: {formatCurrency(transaction.change)}</div>
-        )}
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            fontWeight: "bold",
+            fontSize: "14px",
+            marginTop: "4px",
+          }}
+        >
+          <span>TOTAL:</span>
+          <span>{formatCurrency(transaction.totalAmount)}</span>
+        </div>
       </div>
 
-      <div style={{ borderTop: "1px dashed #000", margin: "4px 0" }} />
+      <div style={{ borderTop: "1px dashed #000", margin: "8px 0" }} />
 
-      {/* Footer */}
-      <div style={{ textAlign: "center", marginTop: "10px" }}>
-        Printed: {new Date().toLocaleString()}
+      {/* --- PAYMENT --- */}
+      <div style={{ fontSize: "11px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span>Payment Type:</span>
+          <span style={{ textTransform: "uppercase" }}>
+            {transaction.paymentType}
+          </span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span>Cash/Amount:</span>
+          <span>{formatCurrency(transaction.payment)}</span>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            fontWeight: "bold",
+            marginTop: "2px",
+          }}
+        >
+          <span>CHANGE:</span>
+          <span>{formatCurrency(transaction.change)}</span>
+        </div>
+      </div>
+
+      {/* --- FOOTER --- */}
+      <div style={{ textAlign: "center", marginTop: "15px", fontSize: "10px" }}>
+        Item(s): {transaction.purchasedProducts?.length || 0}
         <br />
-        <strong>THANK YOU FOR YOUR PURCHASE!</strong>
         <br />
-        Please keep this as your official receipt.
+        <strong>THANK YOU FOR BUYING!</strong>
+        <br />
+        Please keep this receipt for warranty purposes.
+        <br />
+        Software by: Ichthus Tech
       </div>
     </div>
   );

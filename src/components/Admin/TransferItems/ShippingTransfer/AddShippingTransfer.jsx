@@ -16,7 +16,7 @@ import {
 import DatePicker from "react-datepicker"; // <-- IMPORT DATEPICKER
 import "react-datepicker/dist/react-datepicker.css";
 import { useSelector } from "react-redux";
-import { selectFullName } from "../../../../redux/IchthusSlice";
+import { selectUserName } from "../../../../redux/IchthusSlice";
 import AddShippingSerialSelection from "./AddShippingSerialSelection";
 
 const getUniqueValues = (array, key) => [
@@ -41,7 +41,7 @@ const AddShippingTransfer = ({ onClose, refreshData }) => {
     useState(null);
   const [transferredDate, setTransferredDate] = useState(new Date());
 
-  const fullName = useSelector(selectFullName);
+  const fullName = useSelector(selectUserName);
 
   useEffect(() => {
     const fetchPricelists = async () => {
@@ -807,7 +807,6 @@ const AddShippingTransfer = ({ onClose, refreshData }) => {
                       {selectedProductsForTransfer.map((product) => (
                         <tr key={product.productId}>
                           <td className="px-3 py-2 whitespace-nowrap">
-                            {/* ... (product display remains the same) ... */}
                             <div className="flex items-center">
                               {product.productImage ? (
                                 <img

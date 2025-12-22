@@ -1,96 +1,117 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
+import { toast } from "react-toastify";
 import { domain } from "../../../security";
 import ReceivedItemModal from "./ReceivedItemModal";
 import { useSelector } from "react-redux";
-import { selectFullName } from "../../../redux/IchthusSlice";
+// --- 1. UPDATED: Using selectUserName for consistency ---
+import { selectUserName } from "../../../redux/IchthusSlice";
 
-// Accept the new refreshTrigger prop
 const TransferHistoryTable = ({ refreshTrigger, onReceiveSuccess }) => {
+  // --- State Management ---
   const [transfers, setTransfers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState(null);
-  const fullName = useSelector(selectFullName);
 
-  // Define fetchTransfers inside or outside, but make sure it's stable if outside
-  const fetchTransfers = async () => {
+  // --- 2. UPDATED: Using userName from Redux store ---
+  const userName = useSelector(selectUserName);
+
+  // --- 3. OPTIMIZED: Memoized fetch function for stability ---
+  const fetchTransfers = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true); // Set loading to true before fetching
       const apiUrl = `${domain}/api/Transfers`;
       const response = await axios.get(apiUrl, {
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
       });
       setTransfers(response.data);
     } catch (err) {
       setError(err);
+      toast.error("Failed to fetch awaiting transfers.");
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchTransfers();
-  }, [refreshTrigger]); // Add refreshTrigger to the dependency array
+  }, [refreshTrigger, fetchTransfers]); // Effect depends on the memoized function
 
   const formatDate = (dateString) => {
     if (!dateString) return "N/A";
-    try {
-      const options = {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      };
-      return new Date(dateString).toLocaleDateString(undefined, options);
-    } catch (e) {
-      console.error("Error formatting date:", e);
-      return "Invalid Date";
-    }
+    const options = { year: "numeric", month: "long", day: "numeric" };
+    return new Date(dateString).toLocaleDateString(undefined, options);
   };
 
-  if (loading) {
-    return <p className="text-center text-gray-600">Loading transfers...</p>;
-  }
-
-  if (error) {
-    return (
-      <p className="text-center text-red-500">
-        Error loading transfers: {error.message}
-      </p>
-    );
-  }
-
-  if (transfers.length === 0) {
-    return (
-      <p className="text-center text-gray-600">No Awaiting Delivery found.</p>
-    );
-  }
-
+  // --- 4. IMPROVED: Using toast for confirmation and feedback ---
   const handleRevert = async (id) => {
-    const confirmRevert = window.confirm(
-      `Are you sure you want to Cancel transfer ID ${id}?`
-    );
-    if (!confirmRevert) return;
-
-    try {
-      const apiUrl = `${domain}/api/Transfers/revert/${id}`;
-      await axios.post(apiUrl, null, {
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-
-      setTransfers((prevTransfers) => prevTransfers.filter((t) => t.id !== id));
-      alert(`Transfer ID ${id} successfully reverted.`);
-      // Optionally trigger a refresh if the backend handles re-adding to awaiting delivery
-      // triggerTransferHistoryRefresh();
-    } catch (err) {
-      console.error("Revert failed:", err);
-      alert(`Failed to revert transfer ID ${id}.`);
+    if (!window.confirm(`Are you sure you want to cancel transfer ID ${id}?`)) {
+      return;
     }
+
+    const revertPromise = axios.post(`${domain}/api/Transfers/revert/${id}`);
+
+    toast.promise(revertPromise, {
+      pending: `Cancelling transfer ID ${id}...`,
+      success: {
+        render() {
+          fetchTransfers(); // Re-fetch data on success
+          return `Transfer ID ${id} was successfully cancelled.`;
+        },
+      },
+      error: `Failed to cancel transfer ID ${id}.`,
+    });
+  };
+
+  const handleConfirmReceive = async (transfer, processedItems) => {
+    const receivePromise = new Promise(async (resolve, reject) => {
+      try {
+        const payload = {
+          transferId: transfer.id,
+          fromLocation: transfer.fromLocation,
+          toLocation: transfer.toLocation,
+          status: "Completed",
+          releaseBy: transfer.releaseBy,
+          receiveBy: userName, // Using updated userName
+          transferredDate: transfer.transferredDate,
+          RecievedDate: new Date().toISOString(),
+          items: processedItems.map((item) => ({
+            receiverPricelistId: item.receiverPricelistId,
+            PricelistId: item.PricelistId,
+            quantity: item.quantity,
+            serialNumbers: item.serialNumbers.map((sn) => ({
+              serialNumberId: sn.id,
+              status: sn.status,
+              serialName: sn.serialName,
+            })),
+          })),
+        };
+
+        await axios.post(`${domain}/api/CompletedTransfers`, payload);
+
+        // --- 5. RELIABLE STATE: Call external refresh triggers on success ---
+        if (onReceiveSuccess) {
+          onReceiveSuccess();
+        }
+        closeReceiveModal(); // This function will trigger a local refresh
+        resolve(); // Resolve promise for toast
+      } catch (err) {
+        console.error(
+          "Receive failed:",
+          err.response ? err.response.data : err.message
+        );
+        reject(err); // Reject promise for toast
+      }
+    });
+
+    toast.promise(receivePromise, {
+      pending: `Receiving transfer ID ${transfer.id}...`,
+      success: `Transfer ID ${transfer.id} successfully received.`,
+      error: `Failed to receive transfer ID ${transfer.id}. Please try again.`,
+    });
   };
 
   const openReceiveModal = (transfer) => {
@@ -98,59 +119,29 @@ const TransferHistoryTable = ({ refreshTrigger, onReceiveSuccess }) => {
     setIsModalOpen(true);
   };
 
+  // Closing the modal triggers a data refresh to ensure the list is up-to-date
   const closeReceiveModal = () => {
     setIsModalOpen(false);
     setSelectedTransfer(null);
-    // After closing modal (and potentially receiving), refresh the table
     fetchTransfers();
   };
 
-  const handleConfirmReceive = async (transfer, processedItems) => {
-    try {
-      const RecievedDate = new Date();
-      const payloadForReceive = {
-        transferId: transfer.id,
-        fromLocation: transfer.fromLocation,
-        toLocation: transfer.toLocation,
-        status: "Completed",
-        releaseBy: transfer.releaseBy,
-        receiveBy: fullName,
-        transferredDate: transfer.transferredDate,
-        RecievedDate: RecievedDate.toISOString(),
-        items: processedItems.map((item) => ({
-          receiverPricelistId: item.receiverPricelistId,
-          PricelistId: item.PricelistId,
-          quantity: item.quantity,
-          serialNumbers: item.serialNumbers.map((sn) => ({
-            serialNumberId: sn.id,
-            status: sn.status,
-            serialName: sn.serialName,
-          })),
-        })),
-      };
-      console.log(
-        "Final bulkData:",
-        JSON.stringify(payloadForReceive, null, 2)
-      );
-
-      await axios.post(`${domain}/api/CompletedTransfers`, payloadForReceive);
-
-      setTransfers((prevTransfers) =>
-        prevTransfers.filter((t) => t.id !== transfer.id)
-      );
-      alert(`Transfer ID ${transfer.id} successfully Received.`);
-      closeReceiveModal(); // This will now also trigger fetchTransfers
-      if (onReceiveSuccess) {
-        onReceiveSuccess(); // Trigger refresh for ReceivedTransfer table
-      }
-    } catch (err) {
-      console.error(
-        "Receive failed:",
-        err.response ? err.response.data : err.message
-      );
-      alert(`Failed to receive transfer ID ${transfer.id}. Please try again.`);
-    }
-  };
+  if (loading)
+    return (
+      <p className="text-center text-gray-600 py-4">Loading transfers...</p>
+    );
+  if (error)
+    return (
+      <p className="text-center text-red-500 py-4">
+        Error loading transfers: {error.message}
+      </p>
+    );
+  if (transfers.length === 0)
+    return (
+      <p className="text-center text-gray-600 py-4">
+        No transfers are awaiting delivery.
+      </p>
+    );
 
   return (
     <div className="container mx-auto mt-8">
@@ -162,13 +153,13 @@ const TransferHistoryTable = ({ refreshTrigger, onReceiveSuccess }) => {
           <thead className="bg-gray-200">
             <tr>
               {[
-                "Transfer ID",
-                "Release date",
-                "From Location",
-                "To Location",
-                "Total Items",
+                "ID",
+                "Release Date",
+                "From",
+                "To",
+                "Items",
                 "Status",
-                "Release By",
+                "Released By",
                 "Product Details",
                 "Actions",
               ].map((header) => (
@@ -193,34 +184,29 @@ const TransferHistoryTable = ({ refreshTrigger, onReceiveSuccess }) => {
                 <td className="py-3 px-4">{transfer.items.length}</td>
                 <td className="py-3 px-4">{transfer.status}</td>
                 <td className="py-3 px-4">{transfer.releaseBy}</td>
-
                 <td className="py-3 px-4">
                   {transfer.items?.length > 0 ? (
                     <ul className="list-disc list-inside text-sm text-gray-600">
                       {transfer.items.map((item, index) => (
                         <li key={item.id || index} className="mb-1">
-                          <strong>Product:</strong>{" "}
-                          {item.pricelist?.product?.productName || "N/A"}
+                          <strong>
+                            {item.pricelist?.product?.productName || "N/A"}
+                          </strong>
                           {item.pricelist?.color?.colorName &&
                             ` (${item.pricelist.color.colorName})`}
-                          {" - "}
-                          <strong>Qty:</strong> {item.quantity}
-                          <span>
-                            {" - "}
-                            <strong>SNs:</strong>{" "}
-                            {item.pricelist?.serialNumbers?.length > 0
-                              ? item.pricelist.serialNumbers
-                                  .filter((sn) => sn.serialName !== "")
-                                  .map((sn) => sn.serialName)
-                                  .join(", ")
-                              : "No Serial"}
-                          </span>
+                          <br />
+                          Qty: {item.quantity} | SNs:{" "}
+                          {item.pricelist?.serialNumbers?.length > 0
+                            ? item.pricelist.serialNumbers
+                                .map((sn) => sn.serialName)
+                                .join(", ")
+                            : "No Serial"}
                         </li>
                       ))}
                     </ul>
                   ) : (
                     <p className="text-sm text-gray-600 italic">
-                      No items associated with this transfer.
+                      No items in transfer.
                     </p>
                   )}
                 </td>
@@ -231,12 +217,11 @@ const TransferHistoryTable = ({ refreshTrigger, onReceiveSuccess }) => {
                   >
                     Cancel
                   </button>
-
                   <button
                     onClick={() => openReceiveModal(transfer)}
                     className="bg-green-500 hover:bg-green-600 text-white text-sm font-medium px-3 py-1 rounded"
                   >
-                    Item Received
+                    Receive
                   </button>
                 </td>
               </tr>

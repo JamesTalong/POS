@@ -17,7 +17,7 @@ import SerialSelectionModal from "./SerialSelectionModal";
 import DatePicker from "react-datepicker"; // <-- IMPORT DATEPICKER
 import "react-datepicker/dist/react-datepicker.css";
 import { useSelector } from "react-redux";
-import { selectFullName } from "../../../redux/IchthusSlice";
+import { selectUserName } from "../../../redux/IchthusSlice";
 
 const getUniqueValues = (array, key) => [
   ...new Set(array.map((item) => item[key]).filter(Boolean)),
@@ -41,7 +41,7 @@ const TransferInventoryModal = ({ onClose, refreshData }) => {
     useState(null);
   const [transferredDate, setTransferredDate] = useState(new Date());
 
-  const fullName = useSelector(selectFullName);
+  const fullName = useSelector(selectUserName);
 
   useEffect(() => {
     const fetchPricelists = async () => {
@@ -450,7 +450,6 @@ const TransferInventoryModal = ({ onClose, refreshData }) => {
         )}
 
         <div className="sticky top-0 bg-white z-20 px-6 py-4 border-b rounded-t-lg">
-          {/* ... (header remains the same) ... */}
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-semibold text-gray-800">
               Transfer Inventory
@@ -581,7 +580,6 @@ const TransferInventoryModal = ({ onClose, refreshData }) => {
 
           {sendingLocation && (
             <div className="p-4 border rounded-md">
-              {/* ... (product search remains the same) ... */}
               <h3 className="text-lg font-medium text-gray-700 mb-3">
                 Select products to be transferred
               </h3>
@@ -684,7 +682,6 @@ const TransferInventoryModal = ({ onClose, refreshData }) => {
                       {selectedProductsForTransfer.map((product) => (
                         <tr key={product.productId}>
                           <td className="px-3 py-2 whitespace-nowrap">
-                            {/* ... (product display remains the same) ... */}
                             <div className="flex items-center">
                               {product.productImage ? (
                                 <img
