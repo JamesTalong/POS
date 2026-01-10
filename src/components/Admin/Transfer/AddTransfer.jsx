@@ -1,850 +1,806 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import Loader from "../../loader/Loader";
 import { toast } from "react-toastify";
 import axios from "axios";
+// CHECK THIS IMPORT PATH: Ensure it points to your actual security.js file
 import { domain } from "../../../security";
 import {
   FaTimes,
-  FaArrowRight,
-  FaSearch,
-  FaImage,
   FaTrash,
-  FaListOl,
-  FaCalendarAlt, // Icon for "Select Serials" button
+  FaCalendarAlt,
+  FaArrowRight,
+  FaWarehouse,
+  FaBarcode,
+  FaBoxOpen,
 } from "react-icons/fa";
+import { Search, X, Package } from "lucide-react";
 import SerialSelectionModal from "./SerialSelectionModal";
-
-import DatePicker from "react-datepicker"; // <-- IMPORT DATEPICKER
+import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { useSelector } from "react-redux";
-import { selectUserName } from "../../../redux/IchthusSlice";
+import { selectFullName } from "../../../redux/IchthusSlice";
 
-const getUniqueValues = (array, key) => [
-  ...new Set(array.map((item) => item[key]).filter(Boolean)),
-];
+// --- CUSTOM SEARCH FILTER COMPONENT ---
+const InventorySearchFilter = ({
+  data,
+  inventoryMap,
+  onSelect,
+  disabled,
+  placeholder,
+}) => {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [isSearchActive, setIsSearchActive] = useState(false);
+  const wrapperRef = useRef(null);
 
+  // Filter Logic
+  const filteredData = useMemo(() => {
+    if (disabled || !data) return [];
+
+    // 1. Get available items (stock > 0)
+    const availableItems = data.filter((p) => {
+      const stockInfo = inventoryMap[p.id];
+      return stockInfo && stockInfo.qty > 0;
+    });
+
+    // 2. Return ALL if search is empty
+    if (!searchTerm.trim()) return availableItems;
+
+    // 3. Filter by name/code
+    const lowerTerm = searchTerm.toLowerCase();
+    return availableItems.filter(
+      (p) =>
+        p.productName.toLowerCase().includes(lowerTerm) ||
+        (p.itemCode && p.itemCode.toLowerCase().includes(lowerTerm))
+    );
+  }, [data, inventoryMap, searchTerm, disabled]);
+
+  // Click outside to close
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+        setIsSearchActive(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [wrapperRef]);
+
+  const handleSelectItem = (item) => {
+    onSelect(item);
+    setSearchTerm("");
+    setIsSearchActive(false);
+  };
+
+  return (
+    <div className="w-full relative" ref={wrapperRef}>
+      <label className="block text-sm font-medium text-gray-700 mb-2">
+        Add Products{" "}
+        {disabled && (
+          <span className="text-gray-400 font-normal">
+            - Select warehouse first
+          </span>
+        )}
+      </label>
+
+      <div className="relative">
+        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+          <Search
+            className={`h-4 w-4 ${
+              disabled ? "text-gray-300" : "text-gray-400"
+            }`}
+          />
+        </div>
+
+        <input
+          type="text"
+          placeholder={placeholder}
+          value={searchTerm}
+          disabled={disabled}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          onFocus={() => setIsSearchActive(true)}
+          className={`w-full pl-9 pr-4 py-2 text-sm border rounded-lg outline-none transition-all
+            ${
+              disabled
+                ? "bg-gray-100 border-gray-200 cursor-not-allowed"
+                : "border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+            }`}
+        />
+
+        {searchTerm && !disabled && (
+          <button
+            onClick={() => setSearchTerm("")}
+            className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+
+        {isSearchActive && !disabled && (
+          <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+            {filteredData.length > 0 ? (
+              <ul className="divide-y divide-gray-100">
+                {filteredData.map((p) => {
+                  const stockInfo = inventoryMap[p.id];
+                  return (
+                    <li
+                      key={p.id}
+                      onClick={() => handleSelectItem(p)}
+                      className="flex justify-between items-center px-4 py-3 text-sm text-gray-800 hover:bg-gray-100 cursor-pointer transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="p-1.5 bg-gray-50 rounded text-gray-400">
+                          <Package size={16} />
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="font-medium text-gray-900">
+                            {p.productName}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            {p.itemCode}
+                          </span>
+                        </div>
+                      </div>
+
+                      <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                        {stockInfo?.qty} {stockInfo?.uom}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <div className="px-4 py-3 text-sm text-gray-500 text-center">
+                {searchTerm
+                  ? `No results for "${searchTerm}"`
+                  : "No items with stock available"}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// --- MAIN MODAL ---
 const TransferInventoryModal = ({ onClose, refreshData }) => {
   const [isLoading, setIsLoading] = useState(false);
-  const [allPricelistData, setAllPricelistData] = useState([]);
 
+  // Data State
+  const [productsMaster, setProductsMaster] = useState([]);
+  const [locations, setLocations] = useState([]);
+  const [locationInventoryMap, setLocationInventoryMap] = useState({});
+
+  // Form State
   const [sendingLocation, setSendingLocation] = useState("");
+  const [sendingLocationId, setSendingLocationId] = useState(null);
+
   const [receivingLocation, setReceivingLocation] = useState("");
-  const [globalTransferNotes, setGlobalTransferNotes] = useState("");
+  const [receivingLocationId, setReceivingLocationId] = useState(null);
 
-  const [productSearchTerm, setProductSearchTerm] = useState("");
-  const [selectedProductsForTransfer, setSelectedProductsForTransfer] =
-    useState([]);
-
-  // --- NEW STATE FOR SERIAL SELECTION MODAL ---
-  const [isSerialModalOpen, setIsSerialModalOpen] = useState(false);
-  const [productForSerialSelection, setProductForSerialSelection] =
-    useState(null);
   const [transferredDate, setTransferredDate] = useState(new Date());
+  const [globalNotes, setGlobalNotes] = useState("");
+  const [selectedItems, setSelectedItems] = useState([]);
 
-  const fullName = useSelector(selectUserName);
+  // Modal State
+  const [isSerialModalOpen, setIsSerialModalOpen] = useState(false);
+  const [currentProductForSerial, setCurrentProductForSerial] = useState(null);
+  const [availableSerialsForModal, setAvailableSerialsForModal] = useState([]);
 
+  const fullName = useSelector(selectFullName);
+
+  // 1. INITIAL LOAD (Fetch Products & Locations)
   useEffect(() => {
-    const fetchPricelists = async () => {
+    const fetchMasterData = async () => {
       setIsLoading(true);
       try {
-        const response = await axios.get(`${domain}/api/Pricelists`);
-        setAllPricelistData(Array.isArray(response.data) ? response.data : []);
+        if (!domain)
+          throw new Error("API Domain is undefined. Check security.js import.");
+
+        const [prodRes, locRes] = await Promise.all([
+          axios.get(`${domain}/api/Products`),
+          axios.get(`${domain}/api/Locations`),
+        ]);
+
+        setProductsMaster(Array.isArray(prodRes.data) ? prodRes.data : []);
+        setLocations(Array.isArray(locRes.data) ? locRes.data : []);
       } catch (error) {
-        console.error("Error fetching pricelists:", error);
-        toast.error(
-          "Failed to load pricelist data. Please check API and data format."
-        );
-        setAllPricelistData([]);
+        console.error("Error loading master data:", error);
+        toast.error(`Connection Error: ${error.message || "Network Error"}`);
       }
       setIsLoading(false);
     };
-    fetchPricelists();
+    fetchMasterData();
   }, []);
 
-  const allAvailableLocations = useMemo(() => {
-    if (!Array.isArray(allPricelistData)) return [];
-    return getUniqueValues(allPricelistData, "location").sort();
-  }, [allPricelistData]);
-
-  const productsAtSendingLocation = useMemo(() => {
-    if (!sendingLocation || !Array.isArray(allPricelistData)) return [];
-    const productsMap = new Map();
-
-    allPricelistData
-      .filter((pricelistEntry) => pricelistEntry.location === sendingLocation)
-      .forEach((pricelistEntry) => {
-        const {
-          productId,
-          product,
-          itemCode,
-          productImage,
-          hasSerial,
-          batches,
-          id,
-        } = pricelistEntry;
-
-        let currentProduct = productsMap.get(productId);
-        if (!currentProduct) {
-          currentProduct = {
-            productId,
-            productName: product || "Unnamed Product",
-            itemCode: itemCode || "N/A",
-            productImage: productImage || "",
-            physicalOnHand: 0,
-            hasSerialOverall: hasSerial, // 💥 YOUR RULE: set only from hasSerial
-            allUnsoldSerialsForThisProductAtLocation: [],
-            selectedSerialIds: [],
-            pricelistId: null,
-          };
-        }
-
-        if (!currentProduct.pricelistId) {
-          currentProduct.pricelistId = id;
-        }
-
-        let serialCount = 0;
-
-        (batches || []).forEach((actualBatch) => {
-          if (Array.isArray(actualBatch.serialNumbers)) {
-            const unsoldSerials = actualBatch.serialNumbers.filter(
-              (sn) => !sn.isSold
-            );
-
-            serialCount += unsoldSerials.length;
-
-            unsoldSerials.forEach((sn) => {
-              currentProduct.allUnsoldSerialsForThisProductAtLocation.push({
-                id: sn.id,
-                serialName: sn.serialName,
-                batchId: actualBatch.id,
-                pricelistEntryId: pricelistEntry.id,
-              });
-            });
-          } else {
-            currentProduct.physicalOnHand += actualBatch.numberOfItems || 0;
-          }
-        });
-
-        // ✅ Always update physicalOnHand from serial count if serials found
-        if (serialCount > 0) {
-          currentProduct.physicalOnHand = serialCount;
-        }
-
-        productsMap.set(productId, currentProduct);
-      });
-
-    const productsArray = Array.from(productsMap.values());
-
-    return productsArray;
-  }, [sendingLocation, allPricelistData]);
-
-  const handleAddProductToTransfer = (productToAdd) => {
-    if (
-      selectedProductsForTransfer.find(
-        (p) => p.productId === productToAdd.productId
-      )
-    ) {
-      toast.info(
-        `${productToAdd.productName} is already in the transfer list.`
-      );
-      return;
-    }
-
-    // When adding a product, also include its available serials and pricelistId
-    const productWithSerialsData = productsAtSendingLocation.find(
-      (p) => p.productId === productToAdd.productId
-    );
-
-    setSelectedProductsForTransfer((prev) => [
-      ...prev,
-      {
-        ...productToAdd, // Contains basic product info like name, itemCode, image, hasSerialOverall
-        allUnsoldSerialsForThisProductAtLocation:
-          productWithSerialsData?.allUnsoldSerialsForThisProductAtLocation ||
-          [],
-        pricelistId: productWithSerialsData?.pricelistId, // Get the pricelistId
-        transferQuantity: productToAdd.hasSerialOverall ? 0 : 1, // Serialized starts at 0, non-serialized at 1
-        lineNotes: "",
-        selectedSerialIds: [], // Initialize selected serials for this product
-      },
-    ]);
-    setProductSearchTerm("");
-  };
-
-  const handleRemoveProductFromTransfer = (productIdToRemove) => {
-    setSelectedProductsForTransfer((prev) =>
-      prev.filter((p) => p.productId !== productIdToRemove)
-    );
-  };
-
-  // --- MODIFIED: handleProductTransferChange ---
-  const handleProductTransferChange = (productId, field, value) => {
-    setSelectedProductsForTransfer((prev) =>
-      prev.map((p) => {
-        if (p.productId === productId) {
-          if (field === "transferQuantity") {
-            // For serialized items, quantity is derived from selected serials, so disable direct input
-            if (p.hasSerialOverall) {
-              // toast.info("Quantity for serialized items is set by selecting serial numbers.");
-              return p; // Or, you might allow changing it and then clear selected serials
-            }
-            const rawValue = String(value).trim();
-            if (rawValue === "") {
-              return { ...p, transferQuantity: "" };
-            }
-            const val = parseInt(rawValue, 10);
-            if (isNaN(val) || val < 0) {
-              return { ...p, transferQuantity: "" }; // Or 0
-            } else if (val > p.physicalOnHand) {
-              toast.warn(
-                `Max quantity for ${p.productName} is ${p.physicalOnHand}.`
-              );
-              return { ...p, transferQuantity: p.physicalOnHand };
-            }
-            return { ...p, transferQuantity: val };
-          }
-          return { ...p, [field]: value };
-        }
-        return p;
-      })
-    );
-  };
-
-  // --- NEW: Handler to open serial selection modal ---
-  const handleOpenSerialModal = (product) => {
-    setProductForSerialSelection(product);
-    setIsSerialModalOpen(true);
-  };
-
-  // --- NEW: Handler to save selected serials from modal ---
-  const handleSaveSerials = (productId, newSelectedSerialIds) => {
-    setSelectedProductsForTransfer((prev) =>
-      prev.map((p) =>
-        p.productId === productId
-          ? {
-              ...p,
-              selectedSerialIds: newSelectedSerialIds,
-              transferQuantity: newSelectedSerialIds.length, // Update quantity based on selection
-            }
-          : p
-      )
-    );
-    setIsSerialModalOpen(false);
-    setProductForSerialSelection(null);
-  };
-
-  const handleQuantityBlur = (productId) => {
-    setSelectedProductsForTransfer((prev) =>
-      prev.map((p) => {
-        if (p.productId === productId) {
-          // For non-serialized, if quantity is empty or 0, maybe default to 1 or handle in validation.
-          if (
-            !p.hasSerialOverall &&
-            (p.transferQuantity === "" || Number(p.transferQuantity) === 0)
-          ) {
-            // return { ...p, transferQuantity: 1 }; // Optional: default to 1
-          }
-        }
-        return p;
-      })
-    );
-  };
-
-  const filteredProductsForSearch = useMemo(() => {
-    if (!productSearchTerm) return [];
-    return productsAtSendingLocation.filter(
-      (p) =>
-        (p.productName || "")
-          .toLowerCase()
-          .includes(productSearchTerm.toLowerCase()) ||
-        (p.itemCode || "")
-          .toLowerCase()
-          .includes(productSearchTerm.toLowerCase())
-    );
-  }, [productSearchTerm, productsAtSendingLocation]);
-
-  // --- MODIFIED: handleFormSubmit ---
-  const handleFormSubmit = async (e) => {
-    e.preventDefault();
-    setIsLoading(true);
-
-    if (!sendingLocation) {
-      toast.error("Please select a sending location.");
-      setIsLoading(false);
-      return;
-    }
-    if (!receivingLocation) {
-      toast.error("Please select a receiving location.");
-      setIsLoading(false);
-      return;
-    }
-    if (sendingLocation === receivingLocation) {
-      toast.error("Sending and receiving locations cannot be the same.");
-      setIsLoading(false);
-      return;
-    }
-    if (selectedProductsForTransfer.length === 0) {
-      toast.error("Please add at least one product to transfer.");
-      setIsLoading(false);
-      return;
-    }
-
-    if (!transferredDate) {
-      // Validation for transferred date
-      toast.error("Please select a transferred date.");
-      setIsLoading(false);
-      return;
-    }
-
-    let hasError = false;
-    const itemsToSubmit = [];
-
-    for (const product of selectedProductsForTransfer) {
-      let quantityToSubmit;
-      let serialNumberIdsToSubmit = [];
-
-      if (product.hasSerialOverall) {
-        if (product.selectedSerialIds.length === 0) {
-          toast.error(
-            `Please select serial numbers for ${product.productName}.`
-          );
-          hasError = true;
-          break;
-        }
-        quantityToSubmit = product.selectedSerialIds.length;
-        serialNumberIdsToSubmit = product.selectedSerialIds.map((id) => id); // Ensure it's a new array of the IDs
-
-        if (quantityToSubmit > product.physicalOnHand) {
-          // Should not happen if selection is from available ones
-          toast.error(
-            `Selected serials for ${product.productName} (${quantityToSubmit}) exceeds available stock (${product.physicalOnHand}). This should not happen.`
-          );
-          hasError = true;
-          break;
-        }
-      } else {
-        // Non-serialized product
-        quantityToSubmit = Number(product.transferQuantity);
-        if (isNaN(quantityToSubmit) || quantityToSubmit <= 0) {
-          toast.error(
-            `Enter a valid transfer quantity (>0) for ${product.productName}.`
-          );
-          hasError = true;
-          break;
-        }
-        if (quantityToSubmit > product.physicalOnHand) {
-          toast.error(
-            `Transfer quantity for ${product.productName} (${quantityToSubmit}) exceeds available stock (${product.physicalOnHand}).`
-          );
-          hasError = true;
-          break;
-        }
+  // 2. FETCH INVENTORY when Location Changes
+  useEffect(() => {
+    const fetchLocationInventory = async () => {
+      if (!sendingLocationId) {
+        setLocationInventoryMap({});
+        return;
       }
 
-      if (!product.pricelistId) {
-        // Important: Ensure PricelistId is present
-        toast.error(
-          `Missing PricelistId for product ${product.productName}. Cannot submit.`
+      setIsLoading(true);
+      try {
+        // Fetch inventory for the specific location ID
+        const res = await axios.get(
+          `${domain}/api/Products/stock-by-location/${sendingLocationId}`
         );
-        hasError = true;
-        break;
-      } // --- NEW LOGIC FOR TransmitPricelistId ---
+        const inventoryMap = {};
 
-      let receiverPricelistId = null;
-      const existingProductInReceivingLocation = allPricelistData.find(
-        (data) =>
-          data.product === product.productName &&
-          data.location === receivingLocation
-      );
+        if (Array.isArray(res.data)) {
+          res.data.forEach((item) => {
+            const existing = inventoryMap[item.productId];
+            // Logic: Prefer Base Unit (1) or higher stock
+            const isBaseUnit = item.conversionRate === 1;
+            const hasMoreStock = existing
+              ? item.stockCount > existing.qty
+              : true;
 
-      if (existingProductInReceivingLocation) {
-        receiverPricelistId = existingProductInReceivingLocation.id;
-      } else {
-        // If no similar product in receiving location, create one before transfer.
-        // This means you'll need to make an API call to create a new Pricelist entry
-        // for this product at the receiving location.
-        toast.error(
-          `Product "${product.productName}" does not exist in ${receivingLocation}. Please create it there first.`
-        );
-        hasError = true;
-        break; // In a real application, you'd likely have a function here to // await the creation of the new pricelist entry and get its ID. // Example (conceptual): // try { //   const newPricelistEntry = await createPricelistEntry(product.productId, receivingLocation, product.productName, ...otherProductDetails); //   transmitPricelistId = newPricelistEntry.id; // } catch (createError) { //   toast.error(`Failed to create product entry in ${receivingLocation} for ${product.productName}.`); //   hasError = true; //   break; // }
-      } // --- END NEW LOGIC ---
-      itemsToSubmit.push({
-        productId: product.productId,
-        PricelistId: product.pricelistId, // Use the stored pricelistId for the item (sending location's pricelistId)
-        receiverPricelistId: receiverPricelistId, // Add the pricelistId for the receiving location
-        quantity: quantityToSubmit,
-        notes: product.lineNotes,
-        serialNumberIds: serialNumberIdsToSubmit,
-      });
-    }
-
-    if (hasError) {
+            if (!existing || isBaseUnit || hasMoreStock) {
+              inventoryMap[item.productId] = {
+                qty: item.stockCount || 0,
+                uom: item.uomName || "Units",
+              };
+            }
+          });
+        }
+        setLocationInventoryMap(inventoryMap);
+        setSelectedItems([]); // Clear cart when source changes
+      } catch (error) {
+        console.error("Error fetching inventory:", error);
+        toast.error("Could not load inventory for this location.");
+        setLocationInventoryMap({});
+      }
       setIsLoading(false);
+    };
+
+    fetchLocationInventory();
+  }, [sendingLocationId]);
+
+  // 3. HANDLERS
+  const handleLocationChange = (e) => {
+    const selectedName = e.target.value;
+    const locationObj = locations.find((l) => l.locationName === selectedName);
+
+    setSendingLocation(selectedName);
+
+    // Ensure we capture the ID correctly
+    const locId = locationObj
+      ? locationObj.id || locationObj.locationId || locationObj.Id
+      : null;
+    setSendingLocationId(locId);
+
+    // Reset receiving location and cart
+    setReceivingLocation("");
+    setReceivingLocationId(null);
+    setSelectedItems([]);
+  };
+
+  const handleReceivingLocationChange = (e) => {
+    const selectedName = e.target.value;
+    const locationObj = locations.find((l) => l.locationName === selectedName);
+
+    setReceivingLocation(selectedName);
+
+    const locId = locationObj
+      ? locationObj.id || locationObj.locationId || locationObj.Id
+      : null;
+    setReceivingLocationId(locId);
+  };
+
+  const handleAddProduct = (product) => {
+    if (selectedItems.find((p) => p.productId === product.id)) {
+      toast.info("Product already added.");
       return;
     }
 
-    const transferPayload = {
-      releaseBy: fullName,
-      status: " In Transit",
-      fromLocation: sendingLocation,
-      toLocation: receivingLocation,
-      transferredDate: transferredDate.toISOString(), // Send as ISO string or format as backend requires
-      notes: globalTransferNotes,
-      items: itemsToSubmit,
+    const stockInfo = locationInventoryMap[product.id];
+    const availableStock = stockInfo ? stockInfo.qty : 0;
+    const currentUom = stockInfo ? stockInfo.uom : "Units";
+
+    const newItem = {
+      productId: product.id,
+      productName: product.productName,
+      itemCode: product.itemCode,
+      hasSerial: product.hasSerial,
+      quantity: 0,
+      availableStock: availableStock,
+      uom: currentUom,
+      selectedSerialIds: [], // Empty defaults to Backend Auto-Pick
+      notes: "",
+      isManualSelection: false,
     };
 
+    setSelectedItems((prev) => [newItem, ...prev]);
+  };
+
+  const handleRemoveProduct = (productId) => {
+    setSelectedItems((prev) => prev.filter((p) => p.productId !== productId));
+  };
+
+  const handleNoteChange = (productId, val) => {
+    setSelectedItems((prev) =>
+      prev.map((item) =>
+        item.productId === productId ? { ...item, notes: val } : item
+      )
+    );
+  };
+
+  // --- UPDATED: AUTO SERIAL SELECTION LOGIC ---
+  const handleQuantityChange = async (productId, val) => {
+    const intVal = parseInt(val) || 0;
+    const item = selectedItems.find((i) => i.productId === productId);
+    if (!item) return;
+
+    // Check Max Stock
+    if (intVal > item.availableStock) {
+      toast.warning(`Max available is ${item.availableStock}`);
+      return;
+    }
+
+    // 1. First, update the Quantity immediately (Visual Feedback)
+    // We temporarily reset selectedSerialIds while we fetch the new ones
+    setSelectedItems((prev) =>
+      prev.map((i) => {
+        if (i.productId === productId) {
+          return {
+            ...i,
+            quantity: intVal,
+            selectedSerialIds: [], // Reset pending auto-fetch
+            isManualSelection: false,
+          };
+        }
+        return i;
+      })
+    );
+
+    // 2. If the item has serials and quantity is > 0, AUTO-PICK immediately in background
+    if (item.hasSerial && intVal > 0) {
+      try {
+        // Fetch available serials for this product/location
+        const res = await axios.get(
+          `${domain}/api/SerialNumbers/available/${productId}?locationName=${sendingLocation}`
+        );
+
+        const availableSerials = res.data || [];
+
+        // Logic: Take the first N items (FIFO/Auto-pick)
+        const autoPicked = availableSerials.slice(0, intVal);
+
+        // Extract IDs
+        const autoPickedIds = autoPicked.map((s) => s.id || s.Id);
+
+        // Update the item state with these specific IDs
+        setSelectedItems((prev) =>
+          prev.map((i) => {
+            if (i.productId === productId) {
+              return {
+                ...i,
+                // Ensure selectedSerialIds matches the fetched IDs
+                selectedSerialIds: autoPickedIds,
+                // Mark as manual selection so the UI turns blue/shows "Manual Selection"
+                isManualSelection: true,
+              };
+            }
+            return i;
+          })
+        );
+      } catch (error) {
+        console.error("Auto-pick error:", error);
+      }
+    }
+  };
+
+  // Open Modal to Manually Select Serials (If user wants to override)
+  const openSerialModal = async (item) => {
+    setIsLoading(true);
     try {
-      console.log("Submitting Transfer Payload:", transferPayload);
-      console.log("Final bulkData:", JSON.stringify(transferPayload, null, 2));
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      const apiUrl = domain + "/api/Transfers";
+      const res = await axios.get(
+        `${domain}/api/SerialNumbers/available/${item.productId}?locationName=${sendingLocation}`
+      );
 
-      console.log(transferPayload);
-
-      await axios.post(apiUrl, transferPayload);
-      toast.success("Inventory transfer initiated successfully! (Mocked)");
-
-      if (typeof refreshData === "function") refreshData();
-      onClose();
+      setAvailableSerialsForModal(res.data || []);
+      setCurrentProductForSerial(item);
+      setIsSerialModalOpen(true);
     } catch (error) {
-      console.error(
-        "Error transferring inventory:",
-        error.response?.data || error.message
-      );
-      toast.error(
-        `Transfer failed: ${
-          error.response?.data?.message || "An unexpected error occurred."
-        }`
-      );
+      console.error(error);
+      toast.error("Could not fetch serial numbers.");
     } finally {
       setIsLoading(false);
     }
   };
 
-  useEffect(() => {
-    setSelectedProductsForTransfer([]);
-    setProductSearchTerm("");
-    // Close serial modal if open when sending location changes
-    if (isSerialModalOpen) {
-      setIsSerialModalOpen(false);
-      setProductForSerialSelection(null);
-    }
-  }, [sendingLocation]);
-
-  if (isLoading && allPricelistData.length === 0) {
-    return (
-      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex justify-center items-center z-[1001]">
-        <Loader />
-      </div>
+  // Called when closing the Serial Modal with selection
+  const handleSaveManualSerials = (productId, selectedSerialIds) => {
+    setSelectedItems((prev) =>
+      prev.map((item) => {
+        if (item.productId === productId) {
+          return {
+            ...item,
+            selectedSerialIds: selectedSerialIds,
+            quantity: selectedSerialIds.length,
+            isManualSelection: true,
+          };
+        }
+        return item;
+      })
     );
-  }
+    setIsSerialModalOpen(false);
+  };
+
+  const handleSubmit = async () => {
+    if (!transferredDate) return toast.error("Date is required.");
+    if (!sendingLocationId || !receivingLocationId)
+      return toast.error("Both Sending and Receiving locations are required.");
+
+    // Validate Items
+    const invalidItems = selectedItems.filter((i) => i.quantity <= 0);
+    if (invalidItems.length > 0) {
+      return toast.error("All items must have a quantity greater than 0.");
+    }
+
+    // Construct Payload for Controller
+    const payload = {
+      releaseBy: fullName,
+      status: "In Transit",
+      fromLocationId: parseInt(sendingLocationId),
+      fromLocationName: sendingLocation,
+      toLocationId: parseInt(receivingLocationId),
+      toLocationName: receivingLocation,
+      transferredDate: transferredDate.toISOString(),
+      notes: globalNotes,
+      items: selectedItems.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        // If empty, backend does FIFO. If populated, backend validates specific IDs.
+        serialNumberIds: item.selectedSerialIds || [],
+        notes: item.notes,
+      })),
+    };
+
+    setIsLoading(true);
+    try {
+      const response = await axios.post(`${domain}/api/Transfers`, payload);
+
+      toast.success(
+        response.data.message || "Transfer initiated successfully."
+      );
+      if (refreshData) refreshData();
+      onClose();
+    } catch (error) {
+      console.error("Submit Error:", error);
+      const msg =
+        error.response?.data?.message || "Network Error: Transfer failed.";
+      const detail = error.response?.data?.errors
+        ? JSON.stringify(error.response.data.errors)
+        : "";
+
+      toast.error(`${msg} ${detail}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex justify-center items-center z-[1000] p-4">
-      <div className="relative w-full max-w-4xl bg-white shadow-xl rounded-lg max-h-[90vh] flex flex-col">
-        {isLoading && (
-          <div className="absolute inset-0 bg-white bg-opacity-75 flex justify-center items-center z-[1002] rounded-lg">
-            <Loader />
+    <div className="fixed inset-0 bg-gray-900 bg-opacity-70 backdrop-blur-sm flex justify-center items-center z-[1000] p-4">
+      <div className="bg-white w-11/12 max-w-7xl rounded-2xl shadow-2xl flex flex-col h-[90vh] overflow-hidden border border-gray-200">
+        {/* HEADER */}
+        <div className="px-8 py-5 border-b border-gray-200 flex justify-between items-center bg-white">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-orange-100 text-orange-600 rounded-lg">
+              <FaBoxOpen className="text-xl" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-gray-800">
+                Transfer Inventory
+              </h2>
+              <p className="text-xs text-gray-500">
+                Move products between warehouses
+              </p>
+            </div>
           </div>
-        )}
-
-        <div className="sticky top-0 bg-white z-20 px-6 py-4 border-b rounded-t-lg">
-          <div className="flex justify-between items-center">
-            <h2 className="text-xl font-semibold text-gray-800">
-              Transfer Inventory
-            </h2>
-            <button
-              onClick={onClose}
-              className="text-gray-500 hover:text-gray-700"
-              aria-label="Close modal"
-            >
-              <FaTimes className="h-6 w-6" />
-            </button>
-          </div>
+          <button
+            onClick={onClose}
+            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
+          >
+            <FaTimes size={20} />
+          </button>
         </div>
 
-        <form
-          id="transferInventoryForm"
-          onSubmit={handleFormSubmit}
-          className="flex-grow overflow-y-auto p-6 space-y-6"
-        >
-          {/* ... (warehouse selection and global notes remain the same) ... */}
-          <div className="p-4 border rounded-md bg-gray-50/50">
-            <div className="flex flex-col  gap-4 items-start ">
-              <h3 className="text-lg font-medium text-gray-700 mb-3">
-                Select Store and add notes
-              </h3>
-              <div className="mb-4">
-                <label
-                  htmlFor="transferredDate"
-                  className="block text-sm font-medium text-gray-700 mb-1 "
-                >
-                  Transferred Date <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <DatePicker
-                    id="transferredDate"
-                    selected={transferredDate}
-                    onChange={(date) => setTransferredDate(date)}
-                    dateFormat="MMMM d, yyyy"
-                    className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-orange-500 focus:border-orange-500 sm:text-sm"
-                    wrapperClassName="w-full" // Ensure the wrapper takes full width
-                    popperPlacement="bottom-start"
-                    required
-                  />
-                  <FaCalendarAlt className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 pointer-events-none" />
+        {/* CONTENT */}
+        <div className="flex-1 overflow-y-auto bg-gray-50/50 p-6">
+          {isLoading && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center bg-white/50 backdrop-blur-sm">
+              <Loader />
+            </div>
+          )}
+
+          {/* Config Area */}
+          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm mb-6">
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] gap-6 items-start">
+              {/* Left: Date & Source */}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">
+                    Transferred Date <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <DatePicker
+                      selected={transferredDate}
+                      onChange={(date) => setTransferredDate(date)}
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-sm shadow-sm"
+                      dateFormat="MMMM d, yyyy"
+                    />
+                    <FaCalendarAlt className="absolute left-3.5 top-3 text-gray-400 pointer-events-none" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">
+                    Sending Warehouse <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={sendingLocation}
+                      onChange={handleLocationChange}
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-sm shadow-sm bg-white cursor-pointer"
+                    >
+                      <option value="" disabled>
+                        Select Source Location
+                      </option>
+                      {locations.map((loc) => (
+                        <option
+                          key={loc.id || loc.locationName}
+                          value={loc.locationName}
+                        >
+                          {loc.locationName}
+                        </option>
+                      ))}
+                    </select>
+                    <FaWarehouse className="absolute left-3.5 top-3 text-gray-400 pointer-events-none" />
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-4 items-end">
-              <div>
-                <label
-                  htmlFor="sendingLocation"
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                >
-                  Sending Warehouse
-                </label>
-                <select
-                  id="sendingLocation"
-                  value={sendingLocation}
-                  onChange={(e) => {
-                    setSendingLocation(e.target.value);
-                    setReceivingLocation(""); // --- ADD THIS LINE ---
-                  }}
-                  className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-orange-500 focus:border-orange-500 sm:text-sm"
-                  required
-                >
-                  <option value="" disabled>
-                    Select location
-                  </option>
-                  {allAvailableLocations.map((loc) => (
-                    <option key={loc} value={loc}>
-                      {loc}
-                    </option>
-                  ))}
-                </select>
+
+              {/* Arrow */}
+              <div className="hidden lg:flex flex-col items-center justify-center h-full pt-8">
+                <div className="p-3 bg-gray-50 rounded-full text-gray-400 border border-gray-200">
+                  <FaArrowRight />
+                </div>
               </div>
-              <div className="flex items-center justify-center pt-5">
-                <FaArrowRight className="h-6 w-6 text-gray-500" />
-              </div>
-              <div>
-                <label
-                  htmlFor="receivingLocation"
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                >
-                  Receiving Warehouse
-                </label>
-                <select
-                  id="receivingLocation"
-                  value={receivingLocation}
-                  onChange={(e) => setReceivingLocation(e.target.value)}
-                  className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-orange-500 focus:border-orange-500 sm:text-sm"
-                  required
-                  disabled={!sendingLocation}
-                >
-                  <option value="" disabled>
-                    Select location
-                  </option>
-                  {allAvailableLocations
-                    .filter((loc) => loc !== sendingLocation)
-                    .map((loc) => (
-                      <option key={loc} value={loc}>
-                        {loc}
+
+              {/* Right: Destination & Notes */}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">
+                    Transfer Notes
+                  </label>
+                  <textarea
+                    value={globalNotes}
+                    onChange={(e) => setGlobalNotes(e.target.value)}
+                    placeholder="Reason for transfer, etc."
+                    className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-sm shadow-sm resize-none"
+                    rows={1}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">
+                    Receiving Warehouse <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={receivingLocation}
+                      onChange={handleReceivingLocationChange}
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-sm shadow-sm bg-white disabled:bg-gray-50"
+                      disabled={!sendingLocation}
+                    >
+                      <option value="" disabled>
+                        Select Destination Location
                       </option>
-                    ))}
-                </select>
-              </div>
-            </div>
-            {/* --- DATE PICKER AND NOTES ROW --- */}
-            <div className="mt-4">
-              <div>
-                <label
-                  htmlFor="globalTransferNotes"
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                >
-                  Transfer Notes{" "}
-                  <span className="text-xs text-gray-500">(Overall)</span>
-                </label>
-                <textarea
-                  id="globalTransferNotes"
-                  rows="2" // Adjusted rows to fit better next to date picker
-                  className="mt-1 block w-full py-2 px-3 border border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500 sm:text-sm"
-                  value={globalTransferNotes}
-                  onChange={(e) => setGlobalTransferNotes(e.target.value)}
-                  placeholder="Add any relevant notes for this transfer..."
-                />
+                      {locations
+                        .filter((l) => l.locationName !== sendingLocation)
+                        .map((loc) => (
+                          <option
+                            key={loc.id || loc.locationName}
+                            value={loc.locationName}
+                          >
+                            {loc.locationName}
+                          </option>
+                        ))}
+                    </select>
+                    <FaWarehouse className="absolute left-3.5 top-3 text-gray-400 pointer-events-none" />
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          {sendingLocation && (
-            <div className="p-4 border rounded-md">
-              <h3 className="text-lg font-medium text-gray-700 mb-3">
-                Select products to be transferred
-              </h3>
-              <div className="mb-4 relative">
-                <label
-                  htmlFor="productSearch"
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                >
-                  Add a product:
-                </label>
-                <div className="flex items-center relative">
-                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
-                    <FaSearch className="h-5 w-5" />
-                  </span>
-                  <input
-                    type="text"
-                    id="productSearch"
-                    placeholder="Search products by name or ItemCode..."
-                    value={productSearchTerm}
-                    onChange={(e) => setProductSearchTerm(e.target.value)}
-                    className="mt-1 block w-full py-2 pl-10 pr-3 border border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500 sm:text-sm"
-                    disabled={!sendingLocation}
-                  />
-                </div>
-                {productSearchTerm && filteredProductsForSearch.length > 0 && (
-                  <ul className="absolute z-30 w-full bg-white border border-gray-300 rounded-md mt-1 max-h-60 overflow-auto shadow-lg">
-                    {filteredProductsForSearch.map((product) => (
-                      <li
-                        key={product.productId}
-                        onClick={() => handleAddProductToTransfer(product)}
-                        className="px-3 py-2 hover:bg-orange-100 cursor-pointer text-sm flex items-center"
-                      >
-                        {product.productImage ? (
-                          <img
-                            src={`data:image/jpeg;base64,${product.productImage}`}
-                            alt={product.productName}
-                            className="w-8 h-8 rounded-sm object-cover mr-2 flex-shrink-0"
-                          />
-                        ) : (
-                          <div className="w-8 h-8 rounded-sm bg-gray-200 mr-2 flex-shrink-0 flex items-center justify-center text-gray-400">
-                            <FaImage className="h-5 w-5" />
-                          </div>
-                        )}
-                        <span className="flex-grow">
-                          {product.productName} (ItemCode: {product.itemCode})
-                        </span>
-                        <span className="text-xs text-gray-600 ml-2 whitespace-nowrap">
-                          Stock: {product.physicalOnHand}{" "}
-                          {product.hasSerialOverall &&
-                          product.physicalOnHand > 0
-                            ? "(Serials)"
-                            : ""}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {productSearchTerm &&
-                  !isLoading &&
-                  productsAtSendingLocation.length > 0 &&
-                  filteredProductsForSearch.length === 0 && (
-                    <p className="text-xs text-gray-500 mt-1">
-                      No products found matching "{productSearchTerm}" at{" "}
-                      {sendingLocation}.
-                    </p>
-                  )}
-                {!isLoading &&
-                  productsAtSendingLocation.length === 0 &&
-                  sendingLocation && (
-                    <p className="text-sm text-red-500 mt-1">
-                      No products available at "{sendingLocation}".
-                    </p>
-                  )}
-              </div>
+          {/* Product Selection */}
+          <div className="space-y-4 animate-fadeIn">
+            {/* SEARCH COMPONENT */}
+            <InventorySearchFilter
+              data={productsMaster}
+              inventoryMap={locationInventoryMap}
+              onSelect={handleAddProduct}
+              disabled={!sendingLocation}
+              placeholder={
+                sendingLocation
+                  ? "Search products..."
+                  : "Select source warehouse first"
+              }
+            />
 
-              {selectedProductsForTransfer.length > 0 && (
-                <div className="overflow-x-auto mt-2">
-                  <table className="min-w-full divide-y divide-gray-200 border">
-                    <thead className="bg-gray-100">
-                      <tr>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                          Product/ItemCode
-                        </th>
-                        <th className="px-3 py-2  text-xs font-semibold text-gray-600 uppercase tracking-wider text-center">
-                          On Hand
-                        </th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                          {/* MODIFIED HEADER */}
-                          Transfer Qty / Serials
-                        </th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                          Line Notes
-                        </th>
-                        <th className="px-3 py-2">
-                          <span className="sr-only">Remove</span>
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {selectedProductsForTransfer.map((product) => (
-                        <tr key={product.productId}>
-                          <td className="px-3 py-2 whitespace-nowrap">
-                            <div className="flex items-center">
-                              {product.productImage ? (
-                                <img
-                                  src={`data:image/jpeg;base64,${product.productImage}`}
-                                  alt={product.productName}
-                                  className="w-10 h-10 rounded-sm object-cover mr-3 flex-shrink-0"
-                                />
-                              ) : (
-                                <div className="w-10 h-10 rounded-sm bg-gray-200 mr-3 flex-shrink-0 flex items-center justify-center text-gray-400">
-                                  <FaImage className="h-6 w-6" />
-                                </div>
-                              )}
-                              <div>
-                                <div className="text-sm font-medium text-gray-900">
-                                  {product.productName}
-                                </div>
-                                <div className="text-xs text-gray-500">
-                                  SKU: {product.itemCode}{" "}
-                                  {product.hasSerialOverall ? (
-                                    <span className="text-blue-600 font-semibold">
-                                      (Serialized)
-                                    </span>
-                                  ) : null}
-                                </div>
+            {/* TABLE */}
+            {selectedItems.length > 0 && (
+              <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mt-4">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                        Product
+                      </th>
+                      <th className="px-6 py-4 text-center text-xs font-bold text-gray-500 uppercase tracking-wider w-32">
+                        Available
+                      </th>
+                      <th className="px-6 py-4 text-center text-xs font-bold text-gray-500 uppercase tracking-wider w-56">
+                        Transfer Qty
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                        Note
+                      </th>
+                      <th className="px-6 py-4 w-20"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-100">
+                    {selectedItems.map((item) => (
+                      <tr key={item.productId} className="hover:bg-gray-50/50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <div className="flex-shrink-0 h-10 w-10 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center">
+                              <FaBoxOpen />
+                            </div>
+                            <div className="ml-4">
+                              <div className="text-sm font-semibold text-gray-900">
+                                {item.productName}
+                              </div>
+                              <div className="text-xs text-gray-500 font-mono">
+                                {item.itemCode}
                               </div>
                             </div>
-                          </td>
-                          <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-700 text-center">
-                            {product.physicalOnHand}
-                          </td>
-                          <td className="px-3 py-2 whitespace-nowrap">
-                            {/* --- MODIFIED for Serialized --- */}
-                            {product.hasSerialOverall ? (
-                              <div className="flex flex-col items-start">
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenSerialModal(product)}
-                                  className="mb-1 text-sm text-orange-600 hover:text-orange-800 font-medium py-1 px-2 border border-orange-500 rounded-md hover:bg-orange-50 flex items-center"
-                                  disabled={product.physicalOnHand === 0}
-                                >
-                                  <FaListOl className="mr-2" />
-                                  Select Serials (
-                                  {product.selectedSerialIds.length})
-                                </button>
-                                {product.physicalOnHand === 0 && (
-                                  <span className="text-xs text-gray-500">
-                                    No serials available
-                                  </span>
-                                )}
-                              </div>
-                            ) : (
-                              <input // For non-serialized
-                                type="number"
-                                value={product.transferQuantity}
-                                onChange={(e) =>
-                                  handleProductTransferChange(
-                                    product.productId,
-                                    "transferQuantity",
-                                    e.target.value
-                                  )
-                                }
-                                onBlur={() =>
-                                  handleQuantityBlur(product.productId)
-                                }
-                                min="0" // Allow 0, validation on submit will check for >0
-                                max={product.physicalOnHand}
-                                className="w-20 py-1 px-2 border border-gray-300 rounded-md shadow-sm sm:text-sm focus:ring-orange-500 focus:border-orange-500"
-                                required
-                              />
-                            )}
-                          </td>
-                          <td className="px-3 py-2 whitespace-nowrap">
-                            {/* ... (line notes input remains the same) ... */}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                            {item.availableStock} {item.uom}
+                          </span>
+                        </td>
+
+                        {/* --- UPDATED TABLE CELL FOR QUANTITY --- */}
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center justify-center gap-2">
                             <input
-                              type="text"
-                              placeholder="Item specific notes..."
-                              value={product.lineNotes}
+                              type="number"
+                              min="0"
+                              max={item.availableStock}
+                              value={item.quantity === 0 ? "" : item.quantity}
+                              // UPDATED: No readOnly here. Logic moved to handleQuantityChange
                               onChange={(e) =>
-                                handleProductTransferChange(
-                                  product.productId,
-                                  "lineNotes",
+                                handleQuantityChange(
+                                  item.productId,
                                   e.target.value
                                 )
                               }
-                              className="w-full py-1 px-2 border border-gray-300 rounded-md shadow-sm sm:text-sm focus:ring-orange-500 focus:border-orange-500"
+                              className={`w-20 px-2 py-1.5 border rounded-md text-center text-sm outline-none transition-colors
+                                ${
+                                  item.isManualSelection
+                                    ? "border-indigo-400 bg-indigo-50 text-indigo-700 font-bold"
+                                    : "border-gray-300"
+                                }
+                              `}
+                              placeholder="0"
                             />
-                          </td>
-                          <td className="px-3 py-2 whitespace-nowrap text-right text-sm font-medium">
-                            {/* ... (remove button remains the same) ... */}
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleRemoveProductFromTransfer(
-                                  product.productId
-                                )
-                              }
-                              className="text-red-500 hover:text-red-700 p-1"
-                              aria-label="Remove product"
-                            >
-                              <FaTrash className="h-5 w-5" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              {selectedProductsForTransfer.length === 0 && (
-                <p className="text-sm text-gray-500 text-center py-4">
-                  No products added for transfer yet.
-                </p>
-              )}
-            </div>
-          )}
-        </form>
+                            {/* Barcode button remains if user wants to override auto-selection */}
+                            {item.hasSerial && (
+                              <button
+                                onClick={() => openSerialModal(item)}
+                                title="Pick Specific Serial Numbers"
+                                className={`p-2 rounded-md transition-colors ${
+                                  item.isManualSelection
+                                    ? "bg-indigo-600 text-white shadow-md hover:bg-indigo-700"
+                                    : "text-gray-500 bg-gray-100 hover:bg-orange-100 hover:text-orange-600"
+                                }`}
+                              >
+                                <FaBarcode />
+                              </button>
+                            )}
+                          </div>
+                          {item.quantity <= 0 && (
+                            <p className="text-[10px] text-red-400 text-center mt-1">
+                              Required
+                            </p>
+                          )}
+                          {item.isManualSelection && (
+                            <p className="text-[10px] text-indigo-600 text-center mt-1 font-semibold">
+                              {item.selectedSerialIds?.length > 0
+                                ? "Auto Selected"
+                                : "Manual Selection"}
+                            </p>
+                          )}
+                        </td>
 
-        <div className="sticky bottom-0 bg-gray-100 px-6 py-3 border-t rounded-b-lg">
-          <div className="flex justify-end space-x-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500"
-            >
-              Close
-            </button>
-            <button
-              type="submit"
-              form="transferInventoryForm"
-              className="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-60"
-              disabled={
-                isLoading ||
-                !sendingLocation ||
-                !receivingLocation ||
-                selectedProductsForTransfer.length === 0 ||
-                selectedProductsForTransfer.some(
-                  (p) =>
-                    p.hasSerialOverall
-                      ? p.selectedSerialIds.length === 0 // Serialized must have serials selected
-                      : p.transferQuantity === "" ||
-                        Number(p.transferQuantity) <= 0 // Non-serialized must have qty > 0
-                )
-              }
-            >
-              Transfer
-            </button>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <input
+                            type="text"
+                            value={item.notes}
+                            onChange={(e) =>
+                              handleNoteChange(item.productId, e.target.value)
+                            }
+                            className="block w-full border-gray-300 rounded-md text-sm p-2 bg-gray-50 focus:bg-white outline-none"
+                            placeholder="Optional note..."
+                          />
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right">
+                          <button
+                            onClick={() => handleRemoveProduct(item.productId)}
+                            className="text-gray-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50"
+                          >
+                            <FaTrash />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Empty State */}
+            {selectedItems.length === 0 && sendingLocation && (
+              <div className="py-12 text-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed border-gray-300">
+                <FaBoxOpen className="text-4xl mb-3 opacity-20 mx-auto" />
+                <p className="text-base font-medium text-gray-500">
+                  Your transfer list is empty.
+                </p>
+                <p className="text-sm">Search above to add items.</p>
+              </div>
+            )}
           </div>
+        </div>
+
+        {/* FOOTER */}
+        <div className="px-8 py-5 bg-white border-t border-gray-200 flex justify-end items-center gap-4 rounded-b-2xl">
+          <button
+            onClick={onClose}
+            className="px-6 py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={
+              isLoading ||
+              !sendingLocationId ||
+              !receivingLocationId ||
+              selectedItems.length === 0 ||
+              selectedItems.some((i) => i.quantity <= 0)
+            }
+            className="px-8 py-2.5 bg-gradient-to-r from-orange-600 to-red-600 text-white font-bold rounded-lg shadow-lg hover:from-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isLoading ? "Processing..." : "Submit Transfer"}
+          </button>
         </div>
       </div>
 
-      {/* --- NEW: Serial Selection Modal --- */}
-      {isSerialModalOpen && productForSerialSelection && (
+      {isSerialModalOpen && currentProductForSerial && (
         <SerialSelectionModal
-          product={productForSerialSelection}
-          availableSerials={
-            productForSerialSelection.allUnsoldSerialsForThisProductAtLocation
+          product={currentProductForSerial}
+          availableSerials={availableSerialsForModal}
+          previouslySelectedIds={currentProductForSerial.selectedSerialIds}
+          onClose={() => setIsSerialModalOpen(false)}
+          onSave={(ids) =>
+            handleSaveManualSerials(currentProductForSerial.productId, ids)
           }
-          previouslySelectedIds={productForSerialSelection.selectedSerialIds}
-          onClose={() => {
-            setIsSerialModalOpen(false);
-            setProductForSerialSelection(null);
-          }}
-          onSave={handleSaveSerials}
         />
       )}
     </div>

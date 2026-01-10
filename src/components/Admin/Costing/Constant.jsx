@@ -81,9 +81,12 @@ export const PRICE_TYPES = {
 
 // --- Helper Functions ---
 export const formatPrice = (price) => {
-  const numPrice = parseFloat(price);
+  const numPrice = Number(price);
   if (isNaN(numPrice)) return "N/A";
-  return numPrice.toLocaleString("en-US", {
+
+  return numPrice.toLocaleString("en-PH", {
+    style: "currency",
+    currency: "PHP",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });

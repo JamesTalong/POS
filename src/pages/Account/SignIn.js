@@ -67,7 +67,7 @@ const SignIn = () => {
 
       dispatch(
         SET_ACTIVE_USER({
-          userID: userData.id,
+          userID: userData.employeeId,
           userName: userData.userName,
           employeeId: userData.employeeId,
           roleName: userData.roleName,
@@ -75,7 +75,6 @@ const SignIn = () => {
           firstName: userData.firstName,
           lastName: userData.lastName,
           middleName: userData.middleName,
-
           imgUrl: userData.employeeImage,
           locationId: userData.locationId,
           locationName: userData.locationName,

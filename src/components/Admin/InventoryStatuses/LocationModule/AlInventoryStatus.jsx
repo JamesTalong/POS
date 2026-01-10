@@ -19,7 +19,6 @@ import AddInventoryStatus from "./AddInventoryStatus";
 import Pagination from "../../Pagination";
 import { domain } from "../../../../security";
 
-// --- DEFINED SYSTEM DATA (Must match your C# DbInitializer) ---
 const SYSTEM_STATUSES = [
   "SOLD",
   "QUARANTINE",
@@ -30,9 +29,9 @@ const SYSTEM_STATUSES = [
   "REFURBISHED",
   "RETURNED_GOOD",
   "GOOD",
+  "MISSING",
 ];
 
-// Helper to check if data is system default
 const isSystemData = (name) => {
   return name && SYSTEM_STATUSES.includes(name.toUpperCase());
 };
@@ -57,7 +56,6 @@ const StatusCard = ({ status, onEdit, onDelete }) => {
           <div>
             <span className="font-bold text-slate-800 text-lg flex items-center gap-2">
               {name}
-              {/* Show Shield icon if system data */}
               {isLocked && (
                 <Shield
                   size={14}

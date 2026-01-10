@@ -1,11 +1,15 @@
 import { useState, useEffect, useMemo } from "react";
-import Pagination from "../Pagination"; // Assuming this component is well-styled
-import Loader from "../../loader/Loader"; // Assuming this is a good-looking loader
+import Pagination from "../Pagination";
+import Loader from "../../loader/Loader";
 import useInventoryData from "./useInventoryData";
-import SummaryCard from "./SummaryCard"; // Original SummaryCard for larger screens
-import MobileSummaryCards from "./MobileSummaryCards"; // New component for mobile
+import SummaryCard from "./SummaryCard";
+import MobileSummaryCards from "./MobileSummaryCards";
 import InventoryFilters from "./InventoryFilters";
 import InventoryTable from "./InventoryTable";
+import InventoryStockTable from "./InventoryStockTable";
+import InventoryComparisonTable from "./InventoryComparisonTable";
+import ItemComparisonTable from "./ItemComparisonTable"; // 1. Imported New Component
+import ProductHistoryModal from "./ProductHistoryModal";
 import {
   formatPrice,
   LocationIcon,
@@ -18,30 +22,27 @@ import {
 // --- Constants ---
 const ITEMS_PER_PAGE = 8;
 
-// Helper function to format numbers for mobile display (already exists, but good to keep)
 const formatForMobile = (value) => {
-  if (value >= 1000000) {
-    return (value / 1000000).toFixed(1) + "M";
-  } else if (value >= 1000) {
-    return (value / 1000).toFixed(1) + "k";
-  }
+  if (value >= 1_000_000_000_000)
+    return (value / 1_000_000_000_000).toFixed(1) + "T";
+  if (value >= 1_000_000_000) return (value / 1_000_000_000).toFixed(1) + "B";
+  if (value >= 1_000_000) return (value / 1_000_000).toFixed(1) + "M";
+  if (value >= 1_000) return (value / 1_000).toFixed(1) + "k";
   return value.toString();
 };
 
-// Helper function to format currency for mobile (already exists, but good to keep)
 const formatCurrencyForMobile = (value) => {
-  if (value >= 1000000) {
-    return (value / 1000000).toFixed(1) + "M";
-  } else if (value >= 1000) {
-    return (value / 1000).toFixed(1) + "k";
-  }
+  if (value >= 1_000_000_000_000)
+    return (value / 1_000_000_000_000).toFixed(1) + "T";
+  if (value >= 1_000_000_000) return (value / 1_000_000_000).toFixed(1) + "B";
+  if (value >= 1_000_000) return (value / 1_000_000).toFixed(1) + "M";
+  if (value >= 1_000) return (value / 1_000).toFixed(1) + "k";
   return value.toFixed(2);
 };
 
-// --- Main Dashboard Component ---
 const InventoryCost = () => {
   const {
-    pricelists, // Get the original pricelists to apply stock filter
+    pricelists,
     isLoading,
     searchQuery,
     setSearchQuery,
@@ -53,32 +54,31 @@ const InventoryCost = () => {
   } = useInventoryData();
 
   const [currentPage, setCurrentPage] = useState(1);
-  const [stockFilter, setStockFilter] = useState("all"); // 'all', 'outOfStock', 'withStock'
-  const [isMobile, setIsMobile] = useState(false); // New state for mobile detection
+  const [stockFilter, setStockFilter] = useState("all");
+  const [isMobile, setIsMobile] = useState(false);
 
-  // Effect to determine if the screen is mobile (md breakpoint or below)
+  // Default viewMode
+  const [viewMode, setViewMode] = useState("stock");
+
+  const [selectedProductHistory, setSelectedProductHistory] = useState(null);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+
+  const handleProductClick = (productItem) => {
+    setSelectedProductHistory(productItem);
+    setIsHistoryModalOpen(true);
+  };
+
   useEffect(() => {
-    const checkIsMobile = () => {
-      // Tailwind's 'md' breakpoint is typically 768px.
-      // We'll set it to true if the screen width is less than or equal to 768px.
-      setIsMobile(window.innerWidth <= 768);
-    };
-
-    // Initial check
+    const checkIsMobile = () => setIsMobile(window.innerWidth <= 768);
     checkIsMobile();
-
-    // Add event listener for window resize
     window.addEventListener("resize", checkIsMobile);
-
-    // Clean up event listener on component unmount
-    return () => {
-      window.removeEventListener("resize", checkIsMobile);
-    };
+    return () => window.removeEventListener("resize", checkIsMobile);
   }, []);
 
-  // Filtering logic moved here to apply stock filter before pagination
-  const filteredPricelists = useMemo(() => {
+  // --- Filtering Logic ---
+  const filteredFlatList = useMemo(() => {
     let tempItems = pricelists;
+
     if (selectedLocation && selectedLocation !== "All") {
       tempItems = tempItems.filter(
         (item) =>
@@ -92,13 +92,12 @@ const InventoryCost = () => {
       tempItems = tempItems?.filter(
         (item) =>
           item.product?.toLowerCase()?.includes(lowerCaseQuery) ||
-          item.code?.toLowerCase()?.includes(lowerCaseQuery) ||
+          item.itemCode?.toLowerCase()?.includes(lowerCaseQuery) ||
           (typeof item.brand === "string" &&
             item.brand.toLowerCase().includes(lowerCaseQuery))
       );
     }
 
-    // Apply stock filter
     if (stockFilter === "outOfStock") {
       tempItems = tempItems.filter((item) => item.unsoldCount === 0);
     } else if (stockFilter === "withStock") {
@@ -108,42 +107,59 @@ const InventoryCost = () => {
     return tempItems;
   }, [pricelists, searchQuery, selectedLocation, stockFilter]);
 
+  // --- Grouping Logic ---
+  const groupedPricelists = useMemo(() => {
+    const groups = {};
+
+    filteredFlatList.forEach((item) => {
+      const groupKey = `${item.productId}-${item.location}`;
+      if (!groups[groupKey]) {
+        groups[groupKey] = {
+          key: groupKey,
+          mainInfo: item,
+          variants: [],
+        };
+      }
+      groups[groupKey].variants.push(item);
+    });
+
+    return Object.values(groups);
+  }, [filteredFlatList]);
+
+  // --- Pagination ---
   const indexOfLastItem = currentPage * ITEMS_PER_PAGE;
   const indexOfFirstItem = indexOfLastItem - ITEMS_PER_PAGE;
+
   const currentData = useMemo(
-    () => filteredPricelists.slice(indexOfFirstItem, indexOfLastItem),
-    [filteredPricelists, indexOfFirstItem, indexOfLastItem]
+    () => groupedPricelists.slice(indexOfFirstItem, indexOfLastItem),
+    [groupedPricelists, indexOfFirstItem, indexOfLastItem]
   );
 
   const paginate = (pageNumber) => setCurrentPage(pageNumber);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedLocation, priceType, stockFilter]);
+  }, [searchQuery, selectedLocation, priceType, stockFilter, viewMode]);
 
+  // --- Totals Calculations ---
   const totalInventoryValue = useMemo(() => {
-    return filteredPricelists.reduce((sum, item) => {
+    return filteredFlatList.reduce((sum, item) => {
       const price = parseFloat(item[priceType]) || 0;
       return sum + price * item.unsoldCount;
     }, 0);
-  }, [filteredPricelists, priceType]);
+  }, [filteredFlatList, priceType]);
 
   const totalUniqueProducts = useMemo(() => {
-    return new Set(filteredPricelists.map((p) => p.product)).size;
-  }, [filteredPricelists]);
+    return new Set(filteredFlatList.map((p) => p.product)).size;
+  }, [filteredFlatList]);
 
   const itemsOutOfStock = useMemo(() => {
-    return filteredPricelists.filter((item) => item.unsoldCount === 0).length;
-  }, [filteredPricelists]);
+    return filteredFlatList.filter((item) => item.unsoldCount === 0).length;
+  }, [filteredFlatList]);
 
   const activeLocationsCount = useMemo(() => {
-    return locations.length > 1 ? locations.length - 1 : 0; // excluding "All"
+    return locations.length > 1 ? locations.length - 1 : 0;
   }, [locations]);
-
-  console.log("Filtering by location:", selectedLocation);
-  console.log("Available locations in data:", [
-    ...new Set(pricelists.map((p) => p.location)),
-  ]);
 
   return (
     <div className="container mx-auto p-2 sm:p-4 lg:p-6 min-h-screen">
@@ -156,46 +172,46 @@ const InventoryCost = () => {
         </p>
       </header>
 
-      {/* --- Summary Metrics - Conditional Rendering --- */}
+      {/* Summary Cards */}
       {isMobile ? (
         <MobileSummaryCards
           totalInventoryValue={totalInventoryValue}
           totalUniqueProducts={totalUniqueProducts}
           activeLocationsCount={activeLocationsCount}
           itemsOutOfStock={itemsOutOfStock}
-          priceType={priceType} // Pass priceType if needed for labeling
+          priceType={priceType}
         />
       ) : (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4 lg:gap-6 mb-4 sm:mb-6 lg:mb-8">
           <SummaryCard
             title={`Total Value (${PRICE_TYPES[priceType]?.label})`}
             value={formatPrice(totalInventoryValue)}
-            mobileValue={formatCurrencyForMobile(totalInventoryValue)} // This isn't used in SummaryCard directly, but kept from original
+            mobileValue={formatCurrencyForMobile(totalInventoryValue)}
             icon={<ValueIcon />}
           />
           <SummaryCard
             title="Unique Products"
             value={totalUniqueProducts.toLocaleString()}
-            mobileValue={formatForMobile(totalUniqueProducts)} // This isn't used in SummaryCard directly, but kept from original
+            mobileValue={formatForMobile(totalUniqueProducts)}
             icon={<ProductIcon />}
           />
           <SummaryCard
             title="Active Locations"
             value={activeLocationsCount.toLocaleString()}
-            mobileValue={formatForMobile(activeLocationsCount)} // This isn't used in SummaryCard directly, but kept from original
+            mobileValue={formatForMobile(activeLocationsCount)}
             icon={<LocationIcon />}
           />
           <SummaryCard
-            title="Out of Stock"
+            title="Out of Stock (Variants)"
             value={itemsOutOfStock.toLocaleString()}
-            mobileValue={formatForMobile(itemsOutOfStock)} // This isn't used in SummaryCard directly, but kept from original
+            mobileValue={formatForMobile(itemsOutOfStock)}
             icon={<OutOfStockIcon />}
             bgColor={itemsOutOfStock > 0 ? "bg-red-50" : "bg-white"}
           />
         </div>
       )}
 
-      {/* --- Filters --- */}
+      {/* Filters */}
       <InventoryFilters
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
@@ -204,39 +220,111 @@ const InventoryCost = () => {
         locations={locations}
         selectedPriceType={priceType}
         onPriceTypeChange={setPriceType}
-        stockFilter={stockFilter} // Pass new prop
-        onStockFilterChange={setStockFilter} // Pass new prop
+        stockFilter={stockFilter}
+        onStockFilterChange={setStockFilter}
       />
 
-      {/* --- Inventory Table --- */}
+      {/* View Switcher Dropdown */}
+      <div className="flex justify-end mb-4">
+        <div className="flex items-center space-x-2">
+          <label className="text-sm font-medium text-slate-600">
+            View Mode:
+          </label>
+          <select
+            value={viewMode}
+            onChange={(e) => setViewMode(e.target.value)}
+            className="block w-48 pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md shadow-sm border bg-white"
+          >
+            <option value="stock">Stock Overview</option>
+            <option value="table">Detailed Pricing</option>
+            <option value="comparison">Price Comparison</option>
+            {/* 2. Added New Option Here */}
+            <option value="ItemComparisonTable">Items Comparison</option>
+          </select>
+        </div>
+      </div>
+
       {isLoading ? (
         <div className="flex justify-center items-center h-64">
           <Loader />
         </div>
-      ) : currentData.length > 0 ? (
-        <>
-          <InventoryTable data={currentData} priceType={priceType} />
-          <div className="mt-6 flex justify-center">
-            <Pagination
-              itemsPerPage={ITEMS_PER_PAGE}
-              totalItems={filteredPricelists.length}
-              paginate={paginate}
-              currentPage={currentPage}
-            />
-          </div>
-        </>
       ) : (
-        <div className="text-center py-10 bg-white shadow-md rounded-lg">
-          <p className="mt-4 text-xl font-semibold text-gray-700">
-            No products found.
-          </p>
-          <p className="text-gray-500">
-            Try adjusting your search or filter criteria.
-          </p>
-        </div>
+        <>
+          {/* RENDER LOGIC */}
+
+          {/* 3. Logic for New Table */}
+          {viewMode === "ItemComparisonTable" ? (
+            <div className="overflow-x-auto">
+              {currentData.length > 0 ? (
+                <ItemComparisonTable
+                  groupedData={currentData}
+                  onRowClick={handleProductClick}
+                />
+              ) : (
+                <EmptyState />
+              )}
+            </div>
+          ) : viewMode === "comparison" ? (
+            <div className="overflow-x-auto">
+              {filteredFlatList.length > 0 ? (
+                <InventoryComparisonTable
+                  groupedData={currentData}
+                  priceType={priceType}
+                />
+              ) : (
+                <EmptyState />
+              )}
+            </div>
+          ) : currentData.length > 0 ? (
+            <>
+              {viewMode === "table" ? (
+                <InventoryTable
+                  groupedData={currentData}
+                  priceType={priceType}
+                  onRowClick={handleProductClick}
+                />
+              ) : (
+                <InventoryStockTable
+                  groupedData={currentData}
+                  onRowClick={handleProductClick}
+                />
+              )}
+
+              <div className="mt-6 flex justify-center">
+                <Pagination
+                  itemsPerPage={ITEMS_PER_PAGE}
+                  totalItems={groupedPricelists.length}
+                  paginate={paginate}
+                  currentPage={currentPage}
+                />
+              </div>
+            </>
+          ) : (
+            <EmptyState />
+          )}
+        </>
       )}
+
+      {/* History Modal */}
+      <ProductHistoryModal
+        isOpen={isHistoryModalOpen}
+        onClose={() => setIsHistoryModalOpen(false)}
+        product={selectedProductHistory}
+      />
     </div>
   );
 };
+
+// Helper component for empty results
+const EmptyState = () => (
+  <div className="text-center py-10 bg-white shadow-md rounded-lg">
+    <p className="mt-4 text-xl font-semibold text-gray-700">
+      No products found.
+    </p>
+    <p className="text-gray-500">
+      Try adjusting your search or filter criteria.
+    </p>
+  </div>
+);
 
 export default InventoryCost;

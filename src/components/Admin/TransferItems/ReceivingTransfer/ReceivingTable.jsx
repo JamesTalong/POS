@@ -40,7 +40,6 @@ const ReceivingTable = ({ refreshTrigger }) => {
   };
 
   const handleDelete = async (id) => {
-    // ... (your existing handleDelete function)
     const confirmDelete = window.confirm(
       `Are you sure you want to delete transfer ID ${id}? This action cannot be undone.`
     );

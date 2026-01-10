@@ -1,33 +1,54 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { ResponsiveBar } from "@nivo/bar";
+import { ResponsiveLine } from "@nivo/line";
 import axios from "axios";
-import Loader from "../../../loader/Loader";
+import { IoStatsChart, IoCalendar, IoChevronDown } from "react-icons/io5";
 import { domain } from "../../../../security";
 
-export default function TransactionChart() {
-  const [transactionData, setTransactionData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [availableYears, setAvailableYears] = useState([]);
-  const [chartData, setChartData] = useState([]);
-  const [keys, setKeys] = useState([]);
-  const [topN, setTopN] = useState(10);
+export default function TransactionChart({
+  sourceType,
+  selectedLocation,
+  className,
+}) {
+  // --- States ---
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(false);
 
+  // Keep Year state local as it is specific to this chart
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+
+  const years = Array.from(
+    { length: 5 },
+    (_, i) => new Date().getFullYear() - i
+  );
+
+  // Fetch Chart Data
   useEffect(() => {
     const fetchData = async () => {
+      setLoading(true);
       try {
-        const response = await axios.get(`${domain}/api/Transactions`);
-        setTransactionData(response.data);
+        const params = new URLSearchParams();
+        params.append("sourceType", sourceType);
+        params.append("year", selectedYear);
+        if (selectedLocation && selectedLocation !== "All") {
+          params.append("locationId", selectedLocation);
+        }
+
+        const response = await axios.get(
+          `${domain}/api/Dashboard/popular-products-monthly`,
+          { params }
+        );
+        setData(response.data);
       } catch (error) {
-        console.error("Error fetching transactions:", error);
+        console.error("Error fetching chart data:", error);
       } finally {
         setLoading(false);
       }
     };
     fetchData();
-  }, []);
+  }, [sourceType, selectedLocation, selectedYear]);
 
-  const processed = useMemo(() => {
+  const chartData = useMemo(() => {
+    if (!data || data.length === 0) return [];
     const monthMap = [
       "Jan",
       "Feb",
@@ -43,176 +64,132 @@ export default function TransactionChart() {
       "Dec",
     ];
 
-    const years = new Set();
-    const productTotals = {};
-    const monthData = Array.from({ length: 12 }, (_, i) => ({
-      month: monthMap[i],
-    }));
-
-    transactionData.forEach((txn) => {
-      const date = new Date(txn.date);
-      const year = date.getFullYear();
-      const month = date.getMonth();
-      years.add(year);
-
-      if (year === selectedYear) {
-        txn.purchasedProducts.forEach((p) => {
-          const name = p.pricelist?.productName;
-          productTotals[name] = (productTotals[name] || 0) + p.quantity;
-          monthData[month][name] = (monthData[month][name] || 0) + p.quantity;
-        });
+    const grouped = {};
+    data.forEach((item) => {
+      if (!grouped[item.productName]) {
+        grouped[item.productName] = Array(12)
+          .fill(0)
+          .map((_, i) => ({ x: monthMap[i], y: 0 }));
+      }
+      const monthIndex = item.month - 1;
+      if (monthIndex >= 0 && monthIndex < 12) {
+        grouped[item.productName][monthIndex].y = item.totalQuantity;
       }
     });
 
-    // Get top N products
-    const sortedProducts = Object.entries(productTotals)
-      .sort((a, b) => b[1] - a[1])
-      .map(([name]) => name);
-
-    const selectedKeys =
-      topN === "all" ? sortedProducts : sortedProducts.slice(0, topN);
-
-    // Filter month data to only include selected keys
-    const filteredMonthData = monthData.map((month) => {
-      const filtered = { month: month.month };
-      selectedKeys.forEach((key) => {
-        if (month[key]) filtered[key] = month[key];
-      });
-      return filtered;
-    });
-
-    return {
-      years: Array.from(years),
-      chartData: filteredMonthData,
-      keys: selectedKeys,
-    };
-  }, [transactionData, selectedYear, topN]);
-
-  useEffect(() => {
-    setAvailableYears(processed.years);
-    setChartData(processed.chartData);
-    setKeys(processed.keys);
-  }, [processed]);
-
-  if (loading) return <Loader />;
+    return Object.keys(grouped).map((productName) => ({
+      id: productName,
+      data: grouped[productName],
+    }));
+  }, [data]);
 
   return (
-    <div className="flex flex-col flex-grow bg-white p-6 rounded-lg shadow-md border border-gray-200 lg:col-span-4">
-      <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
-        <h2 className="text-lg font-semibold text-gray-800">
-          Popular Products Monthly
-        </h2>
+    <div
+      className={`flex flex-col h-full bg-white p-6 rounded-2xl shadow-sm border border-slate-200 animate-fade-in ${className}`}
+    >
+      {/* --- HEADER --- */}
+      <div className="flex flex-row justify-between items-center mb-6">
+        {/* Title */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <label htmlFor="year-select" className="text-sm text-gray-600">
-              Select Year:
-            </label>
+          <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600">
+            <IoStatsChart className="w-5 h-5" />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-slate-800">Product Trends</h2>
+            <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">
+              Top 5 Items
+            </p>
+          </div>
+        </div>
+
+        {/* Styled Year Selector (Matches DashboardFilter) */}
+        <div className="flex items-center gap-2">
+          <IoCalendar className="text-slate-400 hidden sm:block" />
+          <div className="relative group">
             <select
-              id="year-select"
-              className="border border-gray-300 rounded-md px-2 py-1 text-sm"
               value={selectedYear}
-              onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+              onChange={(e) => setSelectedYear(e.target.value)}
+              className="appearance-none bg-slate-50 text-slate-700 border border-slate-200 rounded-xl px-4 py-2 pr-10 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 w-28 cursor-pointer hover:bg-slate-100 transition-colors"
             >
-              {availableYears.map((year) => (
-                <option key={year} value={year}>
-                  {year}
+              {years.map((y) => (
+                <option key={y} value={y}>
+                  {y}
                 </option>
               ))}
             </select>
-          </div>
-          <div className="flex items-center gap-2">
-            <label htmlFor="top-n-select" className="text-sm text-gray-600">
-              Top Products:
-            </label>
-            <select
-              id="top-n-select"
-              className="border border-gray-300 rounded-md px-2 py-1 text-sm"
-              value={topN}
-              onChange={(e) =>
-                setTopN(
-                  e.target.value === "all" ? "all" : parseInt(e.target.value)
-                )
-              }
-            >
-              <option value="10">Top 10</option>
-              <option value="20">Top 20</option>
-              <option value="30">Top 30</option>
-              <option value="all">All</option>
-            </select>
+            <IoChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           </div>
         </div>
       </div>
 
-      <div className="h-[500px] w-full">
-        <ResponsiveBar
-          data={chartData}
-          keys={keys}
-          indexBy="month"
-          margin={{ top: 30, right: 180, bottom: 50, left: 40 }}
-          padding={0.3}
-          groupMode="stacked"
-          layout="vertical"
-          colors={{ scheme: "nivo" }}
-          borderRadius={3}
-          borderWidth={1}
-          borderColor={{ from: "color", modifiers: [["darker", 1.6]] }}
-          axisBottom={{
-            tickSize: 5,
-            tickPadding: 5,
-            tickRotation: 0,
-            legend: "Month",
-            legendPosition: "middle",
-            legendOffset: 40,
-          }}
-          axisLeft={{
-            tickSize: 5,
-            tickPadding: 5,
-            tickRotation: 0,
-            legend: "Quantity",
-            legendPosition: "middle",
-            legendOffset: -30,
-          }}
-          tooltip={({ id, value, color, indexValue }) => (
-            <div className="p-2 text-sm bg-white shadow-md border rounded-md">
-              <strong style={{ color }}>{id}</strong>
-              <br />
-              Month: {indexValue}
-              <br />
-              Quantity: {value}
-            </div>
-          )}
-          labelSkipWidth={12}
-          labelSkipHeight={12}
-          labelTextColor={{ from: "color", modifiers: [["darker", 1.6]] }}
-          legends={
-            keys.length <= 30
-              ? [
-                  {
-                    dataFrom: "keys",
-                    anchor: "right",
-                    direction: "column",
-                    justify: false,
-                    translateX: 160,
-                    itemWidth: 100,
-                    itemHeight: 20,
-                    itemsSpacing: 2,
-                    symbolSize: 14,
-                    effects: [
-                      {
-                        on: "hover",
-                        style: {
-                          itemOpacity: 1,
-                        },
-                      },
-                    ],
-                  },
-                ]
-              : [] // hide legend if too many keys
-          }
-          animate
-          motionStiffness={90}
-          motionDamping={15}
-        />
+      {/* --- CHART --- */}
+      <div className="h-[400px] w-full relative">
+        {loading && (
+          <div className="absolute inset-0 z-10 bg-white/50 backdrop-blur-sm flex items-center justify-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+          </div>
+        )}
+
+        {chartData.length === 0 && !loading ? (
+          <div className="flex flex-col items-center justify-center h-full text-slate-400">
+            <IoStatsChart className="w-12 h-12 mb-2 opacity-20" />
+            <p>No data available for this selection.</p>
+          </div>
+        ) : (
+          <ResponsiveLine
+            data={chartData}
+            margin={{ top: 20, right: 110, bottom: 50, left: 60 }}
+            xScale={{ type: "point" }}
+            yScale={{
+              type: "linear",
+              min: "auto",
+              max: "auto",
+              stacked: false,
+            }}
+            axisBottom={{
+              tickSize: 0,
+              tickPadding: 15,
+              legend: "Month",
+              legendOffset: 36,
+              legendPosition: "middle",
+            }}
+            axisLeft={{
+              tickSize: 0,
+              tickPadding: 15,
+              legend: "Qty",
+              legendOffset: -40,
+              legendPosition: "middle",
+            }}
+            enableGridX={false}
+            gridYValues={5}
+            colors={{ scheme: "category10" }}
+            lineWidth={3}
+            pointSize={8}
+            pointColor={{ theme: "background" }}
+            pointBorderWidth={2}
+            pointBorderColor={{ from: "serieColor" }}
+            useMesh={true}
+            theme={{
+              axis: { ticks: { text: { fill: "#64748b", fontSize: 11 } } },
+              grid: { line: { stroke: "#f1f5f9" } },
+            }}
+            legends={[
+              {
+                anchor: "bottom-right",
+                direction: "column",
+                justify: false,
+                translateX: 100,
+                translateY: 0,
+                itemsSpacing: 0,
+                itemDirection: "left-to-right",
+                itemWidth: 80,
+                itemHeight: 20,
+                symbolSize: 12,
+                symbolShape: "circle",
+              },
+            ]}
+          />
+        )}
       </div>
     </div>
   );

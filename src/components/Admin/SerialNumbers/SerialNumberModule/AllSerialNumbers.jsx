@@ -276,7 +276,7 @@ const AllSerialNumbers = () => {
                     <th className="px-6 py-4">Batch Info</th>
                     <th className="px-6 py-4">Location</th>
                     <th className="px-6 py-4">Status</th>
-                    <th className="px-6 py-4 text-right">Actions</th>
+                    {/* <th className="px-6 py-4 text-right">Actions</th> */}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -310,7 +310,7 @@ const AllSerialNumbers = () => {
                           {item.inventoryStatusName}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-right">
+                      {/* <td className="px-6 py-4 text-right">
                         <button
                           onClick={() => openModal(item)}
                           className="p-2 bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-100 transition"
@@ -318,7 +318,7 @@ const AllSerialNumbers = () => {
                         >
                           <Edit size={16} />
                         </button>
-                      </td>
+                      </td> */}
                     </tr>
                   ))}
                   {currentSerials.length === 0 && (

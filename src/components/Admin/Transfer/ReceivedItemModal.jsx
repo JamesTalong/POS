@@ -1,190 +1,103 @@
 import React, { useState, useEffect } from "react";
+import { useSelector } from "react-redux";
+import axios from "axios";
+import { selectFullName } from "../../../redux/IchthusSlice";
+import { domain } from "../../../security";
 
 const ReceivedItemModal = ({ transfer, onClose, onConfirmReceive }) => {
+  const currentUser = useSelector(selectFullName);
   const [itemsToReceive, setItemsToReceive] = useState([]);
+  const [loadingNames, setLoadingNames] = useState(false);
   const [showConfirmWarning, setShowConfirmWarning] = useState(false);
   const [itemWithMismatch, setItemWithMismatch] = useState(null);
-  const [showSerialDeletionWarning, setShowSerialDeletionWarning] =
-    useState(false);
-  const [serialDeletionWarningItem, setSerialDeletionWarningItem] =
-    useState(null);
-  const [serialDeletionProposedAction, setSerialDeletionProposedAction] =
-    useState(null);
 
   useEffect(() => {
-    if (transfer && transfer.items) {
-      const initialItems = transfer.items.map((item) => ({
-        ...item,
-        receivedQuantity:
-          item.pricelist?.serialNumbers?.length > 0
-            ? item.pricelist.serialNumbers.length // Default to full quantity if serials exist
-            : item.quantity,
-        hasSerials: item.pricelist?.serialNumbers?.length > 0,
-        // Store original serials to always have the full list for tagging
-        receivedSerialNumbers: item.pricelist?.serialNumbers
-          ? item.pricelist.serialNumbers.map((sn) => ({ ...sn }))
-          : [],
-        // This will store IDs of serials confirmed to be "Missing"
-        serialsToMarkAsMissingIds: [], // Changed from serialsToDeleteIds for clarity
-      }));
-      setItemsToReceive(initialItems);
-    }
-  }, [transfer]);
+    const initializeItems = async () => {
+      if (transfer && transfer.items) {
+        setLoadingNames(true);
 
-  if (!transfer) {
-    return null;
-  }
+        const idsToLookup = transfer.items.flatMap(
+          (item) => item.serialNumberIds || []
+        );
 
-  const handleReceivedQuantityChange = (itemId, newQuantityStr) => {
-    const newQuantity = Math.max(0, parseInt(newQuantityStr, 10) || 0);
+        let serialNameMap = {};
 
-    setItemsToReceive((prevItems) =>
-      prevItems.map((item) => {
-        if (item.id === itemId) {
-          const clampedQuantity = Math.min(newQuantity, item.quantity); // item.quantity is original expected
-
-          if (item.hasSerials) {
-            // receivedSerialNumbers always holds the original full list of serials
-            const originalSerialCount = item.receivedSerialNumbers.length;
-            // Number of serials currently NOT marked as missing
-            const currentReceivedSerialCount =
-              item.receivedSerialNumbers.filter(
-                (sn) => !item.serialsToMarkAsMissingIds.includes(sn.id)
-              ).length;
-
-            if (clampedQuantity < currentReceivedSerialCount) {
-              // User is reducing the received quantity below the current non-missing count
-              setSerialDeletionWarningItem(item);
-              setSerialDeletionProposedAction({
-                itemId,
-                newEffectiveReceivedQuantity: clampedQuantity, // This is the target number of "Received" serials
-              });
-              setShowSerialDeletionWarning(true);
-              return { ...item, receivedQuantity: clampedQuantity };
-            } else if (clampedQuantity > currentReceivedSerialCount) {
-              // User is increasing the received quantity
-              const difference = clampedQuantity - currentReceivedSerialCount;
-              let tempSerialsToMarkAsMissingIds = [
-                ...item.serialsToMarkAsMissingIds,
-              ];
-              let unMarkedCount = 0;
-
-              // Try to unmark 'difference' serials from those marked as missing
-              const updatedMissingIds = [];
-              for (
-                let i = tempSerialsToMarkAsMissingIds.length - 1;
-                i >= 0;
-                i--
-              ) {
-                if (unMarkedCount < difference) {
-                  // This serial was missing, now it's considered received again
-                  unMarkedCount++;
-                } else {
-                  updatedMissingIds.unshift(tempSerialsToMarkAsMissingIds[i]);
-                }
-              }
-              tempSerialsToMarkAsMissingIds = updatedMissingIds;
-
-              return {
-                ...item,
-                receivedQuantity: clampedQuantity, // User's intended received quantity
-                serialsToMarkAsMissingIds: tempSerialsToMarkAsMissingIds,
-              };
-            } else {
-              // Quantity matches current non-missing count
-              return { ...item, receivedQuantity: clampedQuantity };
-            }
-          } else {
-            // Item does not have serials, update quantity directly
-            return { ...item, receivedQuantity: clampedQuantity };
-          }
-        }
-        return item;
-      })
-    );
-  };
-
-  const handleConfirmSerialDeletionWarning = () => {
-    const { itemId, newEffectiveReceivedQuantity, markAsMissingSerialId } =
-      serialDeletionProposedAction;
-
-    setItemsToReceive((prevItems) =>
-      prevItems.map((item) => {
-        if (item.id === itemId) {
-          let updatedSerialsToMarkAsMissingIds = [
-            ...item.serialsToMarkAsMissingIds,
-          ];
-
-          if (markAsMissingSerialId) {
-            // Individual serial marked as missing
-            if (
-              !updatedSerialsToMarkAsMissingIds.includes(markAsMissingSerialId)
-            ) {
-              updatedSerialsToMarkAsMissingIds.push(markAsMissingSerialId);
-            }
-          } else {
-            const originalSerials = item.receivedSerialNumbers; // Full list
-            const currentlyConsideredReceived = originalSerials.filter(
-              (sn) => !updatedSerialsToMarkAsMissingIds.includes(sn.id)
+        if (idsToLookup.length > 0) {
+          try {
+            // FIX: Use the full API Domain here
+            const response = await axios.post(
+              `${domain}/api/SerialNumbers/lookup-names`,
+              idsToLookup
             );
 
-            const numToMarkMissing =
-              currentlyConsideredReceived.length - newEffectiveReceivedQuantity;
+            const data = response.data;
 
-            if (numToMarkMissing > 0) {
-              const serialsToNowMarkMissing = currentlyConsideredReceived
-                .slice(-numToMarkMissing)
-                .map((sn) => sn.id);
-
-              serialsToNowMarkMissing.forEach((idToMark) => {
-                if (!updatedSerialsToMarkAsMissingIds.includes(idToMark)) {
-                  updatedSerialsToMarkAsMissingIds.push(idToMark);
-                }
+            if (data && Array.isArray(data)) {
+              data.forEach((sn) => {
+                const id = sn.id || sn.Id;
+                const name = sn.serialName || sn.SerialName;
+                serialNameMap[id] = name;
               });
             }
+          } catch (error) {
+            console.error("Error fetching serial names:", error);
           }
-          // Update item's receivedQuantity to reflect the count of serials NOT marked as missing
-          const actualReceivedCount = item.receivedSerialNumbers.filter(
-            (sn) => !updatedSerialsToMarkAsMissingIds.includes(sn.id)
-          ).length;
+        }
+
+        const initialItems = transfer.items.map((item) => {
+          const isStrictlySerialized = item.hasSerial === true;
+          let fullSerialList = [];
+
+          if (
+            item.serialNumberIds &&
+            Array.isArray(item.serialNumberIds) &&
+            item.serialNumberIds.length > 0
+          ) {
+            fullSerialList = item.serialNumberIds.map((id) => {
+              const mappedName = serialNameMap[id];
+              return {
+                id: id,
+                serialName: mappedName ? mappedName : `Ref #${id}`,
+              };
+            });
+          } else if (item.serialNumbers && Array.isArray(item.serialNumbers)) {
+            fullSerialList = item.serialNumbers;
+          }
 
           return {
             ...item,
-            receivedQuantity: actualReceivedCount,
-            serialsToMarkAsMissingIds: updatedSerialsToMarkAsMissingIds,
+            receivedQuantity: isStrictlySerialized
+              ? fullSerialList.length
+              : item.quantity,
+            hasSerial: isStrictlySerialized,
+            receivedSerialNumbers: fullSerialList.map((sn) => ({ ...sn })),
+            hiddenAvailableSerials: fullSerialList.map((sn) => ({ ...sn })),
+            serialsToMarkAsMissingIds: [],
           };
+        });
+
+        setItemsToReceive(initialItems);
+        setLoadingNames(false);
+      }
+    };
+
+    initializeItems();
+  }, [transfer]);
+
+  // ... (Rest of the handlers: handleReceivedQuantityChange, handleToggleSerialNumberStatus, checkAndDelete) ...
+  // Paste previous handlers here (no changes needed for logic below this point)
+
+  const handleReceivedQuantityChange = (itemId, newQuantityStr) => {
+    const newQuantity = Math.max(0, parseInt(newQuantityStr, 10) || 0);
+    setItemsToReceive((prevItems) =>
+      prevItems.map((item) => {
+        if (item.id === itemId) {
+          const clampedQuantity = Math.min(newQuantity, item.quantity);
+          return { ...item, receivedQuantity: clampedQuantity };
         }
         return item;
       })
     );
-
-    setShowSerialDeletionWarning(false);
-    setSerialDeletionWarningItem(null);
-    setSerialDeletionProposedAction(null);
-  };
-
-  const handleCancelSerialDeletionWarning = () => {
-    // Revert receivedQuantity to match the count of non-missing serials if action is cancelled
-    if (serialDeletionProposedAction && serialDeletionWarningItem) {
-      setItemsToReceive((prevItems) =>
-        prevItems.map((item) => {
-          if (item.id === serialDeletionWarningItem.id) {
-            const currentNonMissingSerialsCount =
-              item.receivedSerialNumbers.filter(
-                (sn) => !item.serialsToMarkAsMissingIds.includes(sn.id)
-              ).length;
-            return {
-              ...item,
-              receivedQuantity: currentNonMissingSerialsCount,
-            };
-          }
-          return item;
-        })
-      );
-    }
-    setShowSerialDeletionWarning(false);
-    setSerialDeletionWarningItem(null);
-    setSerialDeletionProposedAction(null);
   };
 
   const handleToggleSerialNumberStatus = (
@@ -194,43 +107,21 @@ const ReceivedItemModal = ({ transfer, onClose, onConfirmReceive }) => {
   ) => {
     setItemsToReceive((prevItems) =>
       prevItems.map((item) => {
-        if (item.id === itemId) {
-          let updatedSerialsToMarkAsMissingIds = [
-            ...item.serialsToMarkAsMissingIds,
-          ];
-          let newReceivedQuantity = item.receivedQuantity;
-
+        if (item.id === itemId && item.hasSerial) {
+          let updatedMissingIds = [...item.serialsToMarkAsMissingIds];
           if (isCurrentlyMissing) {
-            // If currently missing, unmark it
-            updatedSerialsToMarkAsMissingIds =
-              updatedSerialsToMarkAsMissingIds.filter((id) => id !== serialId);
-            newReceivedQuantity = Math.min(
-              item.quantity, // Cap at original expected quantity
-              newReceivedQuantity + 1
+            updatedMissingIds = updatedMissingIds.filter(
+              (id) => id !== serialId
             );
           } else {
-            const currentNonMissingCount = item.receivedSerialNumbers.filter(
-              (sn) => !item.serialsToMarkAsMissingIds.includes(sn.id)
-            ).length;
-
-            if (currentNonMissingCount - 1 < item.quantity) {
-              setSerialDeletionWarningItem(item);
-              setSerialDeletionProposedAction({
-                itemId,
-                markAsMissingSerialId: serialId,
-              });
-              setShowSerialDeletionWarning(true);
-              return item; // Return item as is, change will happen on confirmation
-            } else {
-              updatedSerialsToMarkAsMissingIds.push(serialId);
-              newReceivedQuantity = Math.max(0, newReceivedQuantity - 1);
-            }
+            updatedMissingIds.push(serialId);
           }
-
+          const newQty =
+            item.receivedSerialNumbers.length - updatedMissingIds.length;
           return {
             ...item,
-            receivedQuantity: newReceivedQuantity,
-            serialsToMarkAsMissingIds: updatedSerialsToMarkAsMissingIds,
+            receivedQuantity: newQty,
+            serialsToMarkAsMissingIds: updatedMissingIds,
           };
         }
         return item;
@@ -238,343 +129,237 @@ const ReceivedItemModal = ({ transfer, onClose, onConfirmReceive }) => {
     );
   };
 
-  // Helper function to prepare the data for onConfirmReceive
-  const prepareConfirmationData = () => {
-    return itemsToReceive.map((item) => {
-      let finalSerialNumbers = [];
-      let quantityForOutput; // This will be the quantity field in the final JSON item
+  const checkAndDelete = () => {
+    let mismatch = null;
+    for (const item of itemsToReceive) {
+      if (item.receivedQuantity < item.quantity) {
+        mismatch = { ...item, effectivelyReceivedQty: item.receivedQuantity };
+        break;
+      }
+    }
+    if (mismatch) {
+      setItemWithMismatch(mismatch);
+      setShowConfirmWarning(true);
+    } else {
+      prepareAndSend();
+    }
+  };
 
-      if (item.hasSerials) {
-        // item.receivedSerialNumbers contains all original serial numbers for this item
-        finalSerialNumbers = item.receivedSerialNumbers.map((sn) => ({
-          id: sn.id,
+  const prepareAndSend = () => {
+    const itemsPayload = itemsToReceive.map((item) => {
+      let processedSerials = [];
+      if (item.hasSerial) {
+        processedSerials = item.receivedSerialNumbers.map((sn) => ({
+          serialNumberId: sn.id,
           serialName: sn.serialName,
           status: item.serialsToMarkAsMissingIds.includes(sn.id)
             ? "Missing"
             : "Received",
         }));
-        quantityForOutput = finalSerialNumbers.length;
       } else {
-        // For items without serial numbers, quantity is what was effectively received.
-        quantityForOutput = item.receivedQuantity;
-        finalSerialNumbers = [];
+        if (item.hiddenAvailableSerials?.length > 0) {
+          processedSerials = item.hiddenAvailableSerials.map((sn, index) => {
+            const isReceived = index < item.receivedQuantity;
+            return {
+              serialNumberId: sn.id,
+              serialName: sn.serialName,
+              status: isReceived ? "Received" : "Missing",
+            };
+          });
+        }
       }
-
       return {
-        PricelistId: item.pricelist.id,
-        quantity: quantityForOutput, // This is the total count of serials (Received + Missing) for serialized items
-        receiverPricelistId: item.receiverPricelistId,
-        serialNumbers: finalSerialNumbers, // field name is "serialNumbers" and contains objects
+        productId: item.productId,
+        itemCode: item.productCode || item.itemCode,
+        productName: item.productName,
+        quantity: item.receivedQuantity,
+        serialNumbers: processedSerials,
       };
     });
-  };
 
-  const checkAndDelete = () => {
-    // Rename to checkAndProceed or similar later if "delete" is misleading
-    let hasMismatch = false;
-    let mismatchedItem = null;
+    const payload = {
+      transferId: transfer.id,
+      fromLocationId: transfer.fromLocationId,
+      toLocationId: transfer.toLocationId,
+      fromLocationName: transfer.fromLocationName,
+      toLocationName: transfer.toLocationName,
+      status: "Received",
+      releaseBy: transfer.releaseBy,
+      receiveBy: currentUser || "Admin",
+      transferredDate: transfer.transferredDate,
+      recievedDate: new Date().toISOString(),
+      items: itemsPayload,
+    };
 
-    for (const item of itemsToReceive) {
-      const expectedQty = item.quantity; // Original expected quantity
-      const effectivelyReceivedQty = item.hasSerials
-        ? item.receivedSerialNumbers.filter(
-            (sn) => !item.serialsToMarkAsMissingIds.includes(sn.id)
-          ).length
-        : item.receivedQuantity;
-
-      if (effectivelyReceivedQty < expectedQty) {
-        hasMismatch = true;
-        mismatchedItem = {
-          // Pass necessary info to warning
-          ...item,
-          effectivelyReceivedQty, // Add this for the warning message
-        };
-        break;
-      }
-    }
-
-    if (hasMismatch) {
-      setItemWithMismatch(mismatchedItem);
-      setShowConfirmWarning(true);
-    } else {
-      const dataToSave = prepareConfirmationData();
-      onConfirmReceive(transfer, dataToSave);
-    }
-  };
-
-  // This confirmation is for the mismatch warning (shortage of items)
-  const handleConfirmDeletion = () => {
-    const dataToSave = prepareConfirmationData();
-    onConfirmReceive(transfer, dataToSave);
+    onConfirmReceive(transfer, payload);
     setShowConfirmWarning(false);
-    setItemWithMismatch(null);
   };
 
-  const displayItemInfo = (item) => {
-    const expectedQty = item.quantity;
-
-    const receivedQtyDisplay = item.hasSerials
-      ? item.receivedQuantity
-      : item.receivedQuantity;
-
-    const canEditReceivedQtyInput =
-      !item.hasSerials ||
-      (item.hasSerials &&
-        !item.receivedSerialNumbers.some((sn) => sn.serialName));
-
-    return (
-      <div className="flex items-center space-x-2">
-        <span>Expected: {expectedQty}</span>
-        <span>Received: </span>
-        <label htmlFor={`received-qty-${item.id}`} className="sr-only">
-          Received Quantity{" "}
-        </label>{" "}
-        {canEditReceivedQtyInput ? (
-          <input
-            id={`received-qty-${item.id}`}
-            type="number"
-            value={receivedQtyDisplay}
-            onChange={(e) =>
-              handleReceivedQuantityChange(item.id, e.target.value)
-            }
-            className="w-20 p-1 border border-gray-300 rounded-md text-sm"
-            min="0"
-            max={expectedQty}
-          />
-        ) : (
-          <span>{receivedQtyDisplay}</span>
-        )}
-      </div>
-    );
-  };
+  if (!transfer) return null;
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-gray-800 bg-opacity-50 z-50">
-      <div className="bg-white p-6 rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-        <h3 className="text-xl font-bold mb-4 text-gray-800">
-          Receive Transfer ID: {transfer.id}
-        </h3>
-        <p className="mb-2">
-          <strong className="font-semibold">From Location:</strong>
-          {transfer.fromLocation}
-        </p>
-        <p className="mb-4">
-          <strong className="font-semibold">To Location:</strong>
-          {transfer.toLocation}
-        </p>
-
-        <h4 className="text-lg font-semibold mb-3 text-gray-700">Items:</h4>
-        {itemsToReceive && itemsToReceive.length > 0 ? (
-          <ul className="list-disc list-inside mb-6 space-y-2">
-            {itemsToReceive.map((item, itemIndex) => {
-              // Filter out serial numbers that don't have a serialName for display purposes
-              const displayableSerials = item.receivedSerialNumbers.filter(
-                (sn) => sn.serialName
-              );
-
-              return (
-                <ul
-                  key={item.id || itemIndex}
-                  className="bg-orange-50 p-3 rounded-md"
-                >
-                  <p>
-                    <strong className="font-medium">Product:</strong>{" "}
-                    {item.pricelist?.product?.productName || "N/A"}
-                    {item.pricelist?.color?.colorName &&
-                      ` (${item.pricelist.color.colorName})`}
-                  </p>
-                  <p>
-                    {/* <strong className="font-medium">Quantity:</strong>{" "} */}
-                    {displayItemInfo(item)}
-                  </p>
-                  <div className="text-sm text-gray-600">
-                    {item.hasSerials && displayableSerials.length > 0 && (
-                      <strong className="font-medium">Serial Numbers:</strong>
-                    )}
-                    {item.hasSerials ? (
-                      <ul className="list-none pl-4 mt-1 space-y-1">
-                        {item.receivedSerialNumbers.length > 0
-                          ? item.receivedSerialNumbers.map((sn) => {
-                              // NEW: Check if serialName exists. If not, don't render this list item.
-                              if (!sn.serialName) {
-                                return null;
-                              }
-
-                              const isMissing =
-                                item.serialsToMarkAsMissingIds.includes(sn.id);
-                              return (
-                                <li
-                                  key={sn.id}
-                                  className={`flex items-center justify-between bg-white p-2 rounded-md shadow-sm ${
-                                    isMissing ? "opacity-60" : ""
-                                  }`}
-                                >
-                                  <span>
-                                    {sn.serialName}
-                                    {isMissing && (
-                                      <span className="ml-2 text-xs font-semibold text-red-500">
-                                        (Missing)
-                                      </span>
-                                    )}
-                                  </span>
-                                  {isMissing ? (
-                                    <button
-                                      onClick={() =>
-                                        handleToggleSerialNumberStatus(
-                                          item.id,
-                                          sn.id,
-                                          true
-                                        )
-                                      }
-                                      className="ml-3 px-2 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition duration-200 text-xs"
-                                      title="Unmark Serial Number as Missing"
-                                    >
-                                      Unmark Missing
-                                    </button>
-                                  ) : (
-                                    <button
-                                      onClick={() =>
-                                        handleToggleSerialNumberStatus(
-                                          item.id,
-                                          sn.id,
-                                          false
-                                        )
-                                      }
-                                      className="ml-3 px-2 py-1 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 transition duration-200 text-xs"
-                                      title="Mark Serial Number as Missing"
-                                    >
-                                      Mark Missing
-                                    </button>
-                                  )}
-                                </li>
-                              );
-                            })
-                          : "No Serials Expected"}{" "}
-                      </ul>
-                    ) : (
-                      "No Serial Numbers for this item"
-                    )}
-                  </div>
-                </ul>
-              );
-            })}
-          </ul>
-        ) : (
-          <p className="text-gray-600 italic mb-6">
-            No items associated with this transfer.
-          </p>
-        )}
-
-        <div className="flex justify-end space-x-3">
+    <div className="fixed inset-0 flex items-center justify-center bg-gray-900 bg-opacity-70 z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="bg-gray-100 px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+          <div>
+            <h3 className="text-lg font-bold text-gray-800">
+              Receive Transfer #{transfer.id}
+            </h3>
+            <p className="text-xs text-gray-500">
+              {transfer.fromLocationName} ➔ {transfer.toLocationName}
+            </p>
+          </div>
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition duration-200"
+            className="text-gray-400 hover:text-gray-600"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="overflow-y-auto p-6 flex-1 bg-gray-50">
+          {loadingNames ? (
+            <div className="flex justify-center items-center h-20">
+              <span className="text-gray-500">Loading details...</span>
+            </div>
+          ) : (
+            itemsToReceive.map((item) => (
+              <div
+                key={item.id}
+                className="bg-white border border-gray-200 rounded-lg p-4 mb-4 shadow-sm"
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <h4 className="font-bold text-gray-800">
+                      {item.productName}
+                    </h4>
+                    <p className="text-xs text-gray-500">
+                      {item.itemCode} {item.hasSerial ? "(Serialized)" : ""}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">Received:</span>
+                    {item.hasSerial ? (
+                      <span
+                        className={`font-bold ${
+                          item.receivedQuantity < item.quantity
+                            ? "text-red-600"
+                            : "text-green-600"
+                        }`}
+                      >
+                        {item.receivedQuantity} / {item.quantity}
+                      </span>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="0"
+                          max={item.quantity}
+                          value={item.receivedQuantity}
+                          onChange={(e) =>
+                            handleReceivedQuantityChange(
+                              item.id,
+                              e.target.value
+                            )
+                          }
+                          className="w-20 border border-gray-300 rounded text-center font-bold p-1 focus:ring-2 focus:ring-indigo-500 outline-none"
+                        />
+                        <span className="text-gray-400 text-sm">
+                          / {item.quantity}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {item.hasSerial && (
+                  <div className="mt-3 border-t pt-2">
+                    <div className="grid gap-2">
+                      {item.receivedSerialNumbers.map((sn) => {
+                        const isMissing =
+                          item.serialsToMarkAsMissingIds.includes(sn.id);
+                        return (
+                          <div
+                            key={sn.id}
+                            className={`flex justify-between items-center p-2 rounded text-sm border ${
+                              isMissing
+                                ? "bg-red-50 border-red-100"
+                                : "bg-green-50 border-green-100"
+                            }`}
+                          >
+                            <span
+                              className={`font-mono ${
+                                isMissing
+                                  ? "text-red-500 line-through"
+                                  : "text-green-700"
+                              }`}
+                            >
+                              {sn.serialName}
+                            </span>
+                            <button
+                              onClick={() =>
+                                handleToggleSerialNumberStatus(
+                                  item.id,
+                                  sn.id,
+                                  isMissing
+                                )
+                              }
+                              className={`text-xs px-2 py-1 rounded border transition-colors ${
+                                isMissing
+                                  ? "bg-white text-gray-600 border-gray-300"
+                                  : "bg-red-100 text-red-600 border-red-200"
+                              }`}
+                            >
+                              {isMissing ? "Restore" : "Mark Missing"}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+        <div className="bg-white px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
           >
             Cancel
           </button>
           <button
             onClick={checkAndDelete}
-            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition duration-200"
+            disabled={loadingNames}
+            className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg shadow-md"
           >
-            Confirm Received
+            Confirm Receipt
           </button>
         </div>
-
-        {/* Warning for Mismatch / Shortage */}
         {showConfirmWarning && itemWithMismatch && (
-          <div className="fixed inset-0 flex items-center justify-center bg-gray-800 bg-opacity-75 z-50">
-            <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full text-center">
-              <h4 className="text-lg font-bold mb-4 text-red-600">
-                Warning! Mismatch Detected
+          <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[60]">
+            <div className="bg-white p-6 rounded-lg max-w-sm w-full text-center border-t-4 border-red-500">
+              <h4 className="text-lg font-bold text-gray-800 mb-2">
+                Shortage Detected
               </h4>
-              <p className="mb-4">
-                Expected quantity for "
-                <strong>
-                  {itemWithMismatch.pricelist?.product?.productName}
-                </strong>
-                " is <strong>{itemWithMismatch.quantity}</strong>, but
-                effectively received quantity is{" "}
-                <strong>{itemWithMismatch.effectivelyReceivedQty}</strong>.
+              <p className="text-sm text-gray-600 mb-4">
+                You are receiving{" "}
+                <b>{itemWithMismatch.effectivelyReceivedQty}</b> out of{" "}
+                <b>{itemWithMismatch.quantity}</b> expected items.
+                <br />
+                The remaining items will be marked as <b>MISSING/LOST</b>.
               </p>
-              <p className="mb-6">
-                This means{" "}
-                <strong>
-                  {itemWithMismatch.quantity -
-                    itemWithMismatch.effectivelyReceivedQty}
-                </strong>{" "}
-                item(s) will be marked as 'Missing'. Do you want to confirm this
-                reception?
-              </p>
-              <div className="flex justify-center space-x-4">
+              <div className="flex justify-center gap-3">
                 <button
                   onClick={() => setShowConfirmWarning(false)}
-                  className="px-4 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition duration-200"
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg"
                 >
-                  Cancel
+                  Go Back
                 </button>
                 <button
-                  onClick={handleConfirmDeletion}
-                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition duration-200"
+                  onClick={prepareAndSend}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg font-bold"
                 >
-                  Confirm with Missing Items
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-        {showSerialDeletionWarning && serialDeletionWarningItem && (
-          <div className="fixed inset-0 flex items-center justify-center bg-gray-800 bg-opacity-75 z-50">
-            <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full text-center">
-              <h4 className="text-lg font-bold mb-4 text-orange-600">
-                Confirm Status Change
-              </h4>
-              {serialDeletionProposedAction.markAsMissingSerialId ? ( // If a specific serial is being marked
-                <p className="mb-6">
-                  You are about to mark the serial number "
-                  <strong>
-                    {serialDeletionWarningItem.receivedSerialNumbers.find(
-                      (sn) =>
-                        sn.id ===
-                        serialDeletionProposedAction.markAsMissingSerialId
-                    )?.serialName ||
-                      `Empty Serial (ID: ${serialDeletionProposedAction.markAsMissingSerialId})`}
-                  </strong>
-                  " as 'Missing'. Are you sure you want to proceed?
-                </p>
-              ) : (
-                // If quantity change is causing serials to be marked missing
-                <p className="mb-6">
-                  You are changing the received quantity for "
-                  <strong>
-                    {serialDeletionWarningItem.pricelist?.product?.productName}
-                  </strong>
-                  ". This will result in{" "}
-                  <strong>
-                    {serialDeletionWarningItem.receivedSerialNumbers.filter(
-                      (sn) =>
-                        !serialDeletionWarningItem.serialsToMarkAsMissingIds.includes(
-                          sn.id
-                        )
-                    ).length -
-                      serialDeletionProposedAction.newEffectiveReceivedQuantity}
-                  </strong>{" "}
-                  additional serial number(s) being marked as 'Missing'. Are you
-                  sure you want to proceed?
-                </p>
-              )}
-
-              <div className="flex justify-center space-x-4">
-                <button
-                  onClick={handleCancelSerialDeletionWarning}
-                  className="px-4 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition duration-200"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleConfirmSerialDeletionWarning}
-                  className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition duration-200" // Changed color for less "destructive" feel
-                >
-                  Confirm Status Change
+                  Confirm Shortage
                 </button>
               </div>
             </div>
@@ -584,5 +369,4 @@ const ReceivedItemModal = ({ transfer, onClose, onConfirmReceive }) => {
     </div>
   );
 };
-
 export default ReceivedItemModal;

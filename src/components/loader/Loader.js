@@ -1,11 +1,14 @@
-import loaderImg from "./GIF/loader.gif";
 import ReactDOM from "react-dom";
+import { ClipLoader } from "react-spinners";
 
 const Loader = () => {
   return ReactDOM.createPortal(
-    <div className="fixed inset-0 bg-black bg-opacity-70 z-[100] flex justify-center items-center">
-      <div className="relative">
-        <img src={loaderImg} alt="Loading..." className="mx-auto" />
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm">
+      <div className="flex flex-col items-center gap-4">
+        <ClipLoader size={48} color="#38bdf8" />
+        <p className="text-slate-200 text-sm tracking-wide">
+          Processing warehouse data...
+        </p>
       </div>
     </div>,
     document.getElementById("loader")

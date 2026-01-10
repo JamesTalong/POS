@@ -1,12 +1,9 @@
 import React, { useState } from "react";
-import { formatPrice, PRICE_TYPES } from "./Constant";
 
-const InventoryTable = ({ groupedData, priceType, onRowClick }) => {
-  const [showPriceDropdown, setShowPriceDropdown] = useState(false);
-  const [selectedMobilePrice, setSelectedMobilePrice] = useState(priceType);
-
+const InventoryStockTable = ({ groupedData, onRowClick }) => {
   const [selectedUoms, setSelectedUoms] = useState({});
 
+  // Helper: Find the specific variant based on selected UOM
   const getActiveItem = (group) => {
     const selectedId = selectedUoms[group.key];
     if (selectedId) {
@@ -34,26 +31,24 @@ const InventoryTable = ({ groupedData, priceType, onRowClick }) => {
     return categories.join(", ");
   };
 
-  // --- Mobile Card ---
+  // --- Mobile Card for Stock View ---
   const MobileCard = ({ group }) => {
     const activeItem = getActiveItem(group);
-    const currentPrice = parseFloat(activeItem[selectedMobilePrice]) || 0;
-    const totalValue = currentPrice * activeItem.unsoldCount;
     const isOutOfStock = activeItem.unsoldCount === 0;
 
     return (
       <div
-        onClick={() => onRowClick && onRowClick(activeItem)} // Ensure this is working
+        onClick={() => onRowClick && onRowClick(activeItem)}
         className={`bg-white rounded-lg shadow-sm p-4 mb-3 border-l-4 cursor-pointer ${
           isOutOfStock
             ? "border-l-red-500 bg-red-50"
-            : "border-l-blue-500 border-gray-200"
+            : "border-l-teal-500 border-gray-200"
         }`}
       >
         <div className="flex justify-between items-start mb-1">
           <div className="flex-1 min-w-0 pr-2">
             <h3 className="font-bold text-gray-900 truncate">
-              {activeItem.product}
+              {activeItem.product || activeItem.productName}
             </h3>
             <p className="text-xs text-gray-500 font-mono">
               {activeItem.itemCode}
@@ -68,20 +63,20 @@ const InventoryTable = ({ groupedData, priceType, onRowClick }) => {
 
         <p className="text-xs text-gray-500 mb-2 truncate">
           <span className="bg-gray-100 px-1 rounded text-gray-700">
-            {activeItem.location}
+            {activeItem.location || activeItem.locationName}
           </span>
           <span className="mx-1">•</span>
           {getCategoryDisplay(activeItem)}
         </p>
 
-        {/* UOM Selector Logic */}
+        {/* UOM Selector */}
         <div className="mb-3">
           {group.variants.length > 1 ? (
             <div onClick={(e) => e.stopPropagation()}>
               <select
                 value={activeItem.uomId}
                 onChange={(e) => handleUomChange(group.key, e.target.value)}
-                className="w-full text-sm border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 py-1.5"
+                className="w-full text-sm border-gray-300 rounded-md shadow-sm focus:border-teal-500 focus:ring-teal-500 py-1.5"
               >
                 {group.variants.map((v) => (
                   <option key={v.uniqueId || v.uomId} value={v.uomId}>
@@ -91,7 +86,6 @@ const InventoryTable = ({ groupedData, priceType, onRowClick }) => {
               </select>
             </div>
           ) : (
-            // Static text if only 1 unit
             <div className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded px-2 py-1.5 inline-block">
               Unit:{" "}
               <span className="font-medium text-gray-700">
@@ -103,30 +97,51 @@ const InventoryTable = ({ groupedData, priceType, onRowClick }) => {
 
         <div className="border-t border-gray-200 my-2"></div>
 
-        <div className="flex justify-between items-end">
+        {/* Stock Details Grid - 4 Columns */}
+        <div className="grid grid-cols-4 gap-1 text-center">
+          {/* Unsold */}
           <div>
-            <p className="text-xs text-gray-500">
-              Price ({PRICE_TYPES[selectedMobilePrice]?.label})
+            <p className="text-[10px] text-gray-500 uppercase font-bold">
+              Unsold
             </p>
-            <div className="font-medium text-blue-700 text-lg">
-              {formatPrice(currentPrice)}
-            </div>
-          </div>
-          <div className="text-right">
-            <p className="text-xs text-gray-500">Available</p>
-            <div
+            <p
               className={`text-lg font-bold ${
-                isOutOfStock ? "text-red-600" : "text-green-600"
+                activeItem.unsoldCount > 0 ? "text-teal-600" : "text-red-600"
               }`}
             >
-              {isOutOfStock ? "0" : activeItem.unsoldCount}
-              <span className="text-sm font-normal text-gray-500 ml-1">
-                {activeItem.uomName}
-              </span>
-            </div>
-            <div className="text-[10px] text-gray-400 mt-1">
-              Val: {formatPrice(totalValue)}
-            </div>
+              {activeItem.unsoldCount}
+            </p>
+          </div>
+
+          {/* Sold */}
+          <div className="border-l border-gray-100">
+            <p className="text-[10px] text-gray-500 uppercase font-bold">
+              Sold
+            </p>
+            <p className="text-lg font-bold text-blue-600">
+              {activeItem.soldCount || 0}
+            </p>
+          </div>
+
+          {/* Bad Stock */}
+          <div className="border-l border-gray-100">
+            <p className="text-[10px] text-gray-500 uppercase font-bold">Bad</p>
+            <p className="text-lg font-bold text-orange-600">
+              {activeItem.badStock || 0}
+            </p>
+          </div>
+
+          {/* Total */}
+          <div className="border-l border-gray-100">
+            <p className="text-[10px] text-gray-500 uppercase font-bold">
+              Total
+            </p>
+            <p className="text-lg font-bold text-gray-700">
+              {activeItem.totalCount ||
+                activeItem.unsoldCount +
+                  (activeItem.soldCount || 0) +
+                  (activeItem.badStock || 0)}
+            </p>
           </div>
         </div>
       </div>
@@ -136,41 +151,7 @@ const InventoryTable = ({ groupedData, priceType, onRowClick }) => {
   // --- Render ---
   return (
     <>
-      {/* Mobile Price Switcher */}
-      <div className="block md:hidden mb-4">
-        <div className="relative">
-          <button
-            onClick={() => setShowPriceDropdown(!showPriceDropdown)}
-            className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 text-left shadow-sm flex justify-between items-center"
-          >
-            <span className="font-medium text-gray-700">
-              Price:{" "}
-              <span className="text-blue-600">
-                {PRICE_TYPES[selectedMobilePrice]?.label}
-              </span>
-            </span>
-            <span className="text-xs">▼</span>
-          </button>
-          {showPriceDropdown && (
-            <div className="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded-lg shadow-lg z-10 mt-1">
-              {Object.values(PRICE_TYPES).map((pt) => (
-                <button
-                  key={pt.key}
-                  onClick={() => {
-                    setSelectedMobilePrice(pt.key);
-                    setShowPriceDropdown(false);
-                  }}
-                  className="w-full text-left px-4 py-3 text-sm border-b last:border-0 hover:bg-gray-50"
-                >
-                  {pt.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Mobile Grid */}
+      {/* Mobile List */}
       <div className="block md:hidden">
         {groupedData.map((group) => (
           <MobileCard key={group.key} group={group} />
@@ -182,42 +163,39 @@ const InventoryTable = ({ groupedData, priceType, onRowClick }) => {
         <table className="w-full text-sm text-left text-gray-700">
           <thead className="text-xs text-gray-600 uppercase bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="py-3 px-4 w-1/5">Item Details</th>
+              <th className="py-3 px-4 w-1/4">Item Details</th>
               <th className="py-3 px-4">Location</th>
               <th className="py-3 px-4 w-40 text-center">Unit Selection</th>
-              {Object.values(PRICE_TYPES).map((pt) => (
-                <th
-                  key={pt.key}
-                  className={`py-3 px-4 text-center whitespace-nowrap ${
-                    priceType === pt.key ? "bg-blue-100 text-blue-800" : ""
-                  }`}
-                >
-                  {pt.label}
-                </th>
-              ))}
-              <th className="py-3 px-4 text-center">Stock</th>
-              <th className="py-3 px-4 text-right">Value</th>
+              {/* Stock Specific Columns */}
+              <th className="py-3 px-4 text-center bg-teal-50 text-teal-800 border-l border-gray-200">
+                Good Stock
+              </th>
+              <th className="py-3 px-4 text-center text-blue-800">Sold</th>
+              <th className="py-3 px-4 text-center text-orange-800">
+                Bad Stock
+              </th>
+              <th className="py-3 px-4 text-center text-gray-800 font-bold">
+                Total Stock
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {groupedData.map((group) => {
               const activeItem = getActiveItem(group);
-              const currentPrice = parseFloat(activeItem[priceType]) || 0;
-              const totalValue = currentPrice * activeItem.unsoldCount;
               const isOutOfStock = activeItem.unsoldCount === 0;
 
               return (
                 <tr
                   key={group.key}
-                  className={`hover:bg-gray-50 transition-colors ${
-                    isOutOfStock ? "bg-red-50/50" : ""
+                  className={`hover:bg-gray-50 transition-colors cursor-pointer ${
+                    isOutOfStock ? "bg-red-50/30" : ""
                   }`}
                   onClick={() => onRowClick && onRowClick(activeItem)}
                 >
                   {/* Details */}
                   <td className="py-3 px-4">
                     <div className="font-bold text-gray-800">
-                      {activeItem.product}
+                      {activeItem.product || activeItem.productName}
                     </div>
                     <div className="text-xs text-gray-500 font-mono mt-0.5">
                       {activeItem.itemCode}
@@ -230,11 +208,11 @@ const InventoryTable = ({ groupedData, priceType, onRowClick }) => {
                   {/* Location */}
                   <td className="py-3 px-4">
                     <span className="inline-block bg-gray-100 rounded px-2 py-1 text-xs font-medium border text-gray-600">
-                      {activeItem.location}
+                      {activeItem.location || activeItem.locationName}
                     </span>
                   </td>
 
-                  {/* UNIT DROPDOWN / STATIC BADGE */}
+                  {/* UNIT DROPDOWN */}
                   <td className="py-3 px-4 text-center">
                     {group.variants.length > 1 ? (
                       <div onClick={(e) => e.stopPropagation()}>
@@ -243,7 +221,7 @@ const InventoryTable = ({ groupedData, priceType, onRowClick }) => {
                           onChange={(e) =>
                             handleUomChange(group.key, e.target.value)
                           }
-                          className="block w-full py-1.5 pl-3 pr-8 text-xs border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md shadow-sm bg-white cursor-pointer"
+                          className="block w-full py-1.5 pl-3 pr-8 text-xs border-gray-300 focus:outline-none focus:ring-teal-500 focus:border-teal-500 rounded-md shadow-sm bg-white cursor-pointer"
                         >
                           {group.variants.map((v) => (
                             <option key={v.uniqueId || v.uomId} value={v.uomId}>
@@ -259,36 +237,39 @@ const InventoryTable = ({ groupedData, priceType, onRowClick }) => {
                     )}
                   </td>
 
-                  {/* Prices */}
-                  {Object.values(PRICE_TYPES).map((pt) => (
-                    <td
-                      key={pt.key}
-                      className={`py-3 px-4 text-center whitespace-nowrap ${
-                        priceType === pt.key
-                          ? "font-bold text-blue-700 bg-blue-50/50"
-                          : "text-gray-600"
+                  {/* Unsold / Available (Good Stock) */}
+                  <td className="py-3 px-4 text-center border-l border-gray-100 bg-teal-50/30">
+                    <span
+                      className={`font-bold text-lg ${
+                        isOutOfStock ? "text-red-500" : "text-teal-700"
                       }`}
                     >
-                      {formatPrice(activeItem[pt.key])}
-                    </td>
-                  ))}
-
-                  {/* Stock */}
-                  <td className="py-3 px-4 text-center">
-                    {isOutOfStock ? (
-                      <span className="text-xs font-bold text-red-500 uppercase">
-                        Out of Stock
-                      </span>
-                    ) : (
-                      <div className="font-bold text-gray-800">
-                        {activeItem.unsoldCount}
-                      </div>
-                    )}
+                      {activeItem.unsoldCount}
+                    </span>
                   </td>
 
-                  {/* Value */}
-                  <td className="py-3 px-4 text-right font-medium text-gray-700">
-                    {formatPrice(totalValue)}
+                  {/* Sold */}
+                  <td className="py-3 px-4 text-center">
+                    <span className="font-medium text-blue-700">
+                      {activeItem.soldCount || 0}
+                    </span>
+                  </td>
+
+                  {/* Bad Stock */}
+                  <td className="py-3 px-4 text-center">
+                    <span className="font-medium text-orange-700">
+                      {activeItem.badStock || 0}
+                    </span>
+                  </td>
+
+                  {/* Total */}
+                  <td className="py-3 px-4 text-center">
+                    <span className="font-bold text-gray-800">
+                      {activeItem.totalCount ||
+                        activeItem.unsoldCount +
+                          (activeItem.soldCount || 0) +
+                          (activeItem.badStock || 0)}
+                    </span>
                   </td>
                 </tr>
               );
@@ -300,4 +281,4 @@ const InventoryTable = ({ groupedData, priceType, onRowClick }) => {
   );
 };
 
-export default InventoryTable;
+export default InventoryStockTable;

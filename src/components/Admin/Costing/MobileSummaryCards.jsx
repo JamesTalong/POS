@@ -8,21 +8,21 @@ import {
 } from "./Constant";
 
 const formatForMobile = (value) => {
-  if (value >= 1000000) {
-    return (value / 1000000).toFixed(1) + "M";
-  } else if (value >= 1000) {
-    return (value / 1000).toFixed(1) + "k";
-  }
+  if (value >= 1_000_000_000_000)
+    return (value / 1_000_000_000_000).toFixed(1) + "T";
+  if (value >= 1_000_000_000) return (value / 1_000_000_000).toFixed(1) + "B";
+  if (value >= 1_000_000) return (value / 1_000_000).toFixed(1) + "M";
+  if (value >= 1_000) return (value / 1_000).toFixed(1) + "k";
   return value.toString();
 };
 
 const formatCurrencyForMobile = (value) => {
-  if (value >= 1000000) {
-    return "$" + (value / 1000000).toFixed(1) + "M";
-  } else if (value >= 1000) {
-    return "$" + (value / 1000).toFixed(1) + "k";
-  }
-  return "$" + value.toFixed(2);
+  if (value >= 1_000_000_000_000)
+    return (value / 1_000_000_000_000).toFixed(1) + "T";
+  if (value >= 1_000_000_000) return (value / 1_000_000_000).toFixed(1) + "B";
+  if (value >= 1_000_000) return (value / 1_000_000).toFixed(1) + "M";
+  if (value >= 1_000) return (value / 1_000).toFixed(1) + "k";
+  return value.toFixed(2);
 };
 
 const MobileSummaryCards = ({
@@ -57,7 +57,7 @@ const MobileSummaryCards = ({
   ];
 
   return (
-    <div className="bg-white dark:bg-slate-800 shadow-lg rounded-xl p-4">
+    <div className="bg-white dark:bg-slate-800  rounded-xl p-4">
       <div className="grid grid-cols-2 gap-4">
         {summaryData.map((item, index) => (
           <div key={index} className="flex items-center space-x-3">

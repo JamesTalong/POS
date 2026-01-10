@@ -13,7 +13,6 @@ import {
   setSelectedCustomer,
   triggerRefresh,
   selectUserID,
-  selectUserName,
   selectFullName,
 } from "../../../../redux/IchthusSlice";
 import TotalPos from "./TotalPos";

@@ -1,5 +1,5 @@
-import React, { useMemo } from "react";
-import MobileDropdown from "./MobileDropdown"; // Make sure path is correct
+import React, { useMemo, useEffect } from "react"; // 1. Import useEffect
+import MobileDropdown from "./MobileDropdown";
 import { PRICE_TYPES } from "./Constant";
 
 const InventoryFilters = ({
@@ -13,15 +13,41 @@ const InventoryFilters = ({
   stockFilter,
   onStockFilterChange,
 }) => {
-  const locationOptions = useMemo(
-    () =>
-      locations.map((loc) => ({
-        value: loc,
-        label: loc === "All" || !loc ? "All Locations" : loc,
-        icon: <div className="w-3 h-3 bg-blue-500 rounded-full" />,
-      })),
-    [locations]
-  );
+  // 1. Create a list of ONLY specific locations (remove 'All' or empty strings)
+  const specificLocations = useMemo(() => {
+    return locations.filter((loc) => loc !== "All" && loc !== "");
+  }, [locations]);
+
+  // --- FIX START ---
+  // Automatically select the first specific location when data loads if "All" is selected
+  useEffect(() => {
+    if (specificLocations.length > 0 && selectedLocation === "All") {
+      onLocationChange(specificLocations[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [specificLocations]);
+  // Note: We intentionally omit 'selectedLocation' from dependencies so
+  // the user can manually choose 'All' later if they want to.
+  // --- FIX END ---
+
+  // 2. Configure Options for Mobile Dropdown (Specifics first, All last)
+  const locationOptions = useMemo(() => {
+    // A. Map the specific locations
+    const options = specificLocations.map((loc) => ({
+      value: loc,
+      label: loc,
+      icon: <div className="w-3 h-3 bg-blue-500 rounded-full" />,
+    }));
+
+    // B. Push "All Locations" to the very end of the array
+    options.push({
+      value: "All",
+      label: "All Locations",
+      icon: <div className="w-3 h-3 bg-gray-400 rounded-full" />,
+    });
+
+    return options;
+  }, [specificLocations]);
 
   const stockOptions = [
     {
@@ -108,7 +134,7 @@ const InventoryFilters = ({
             />
           </div>
 
-          {/* Location */}
+          {/* Location Selection (Desktop) */}
           <div>
             <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
               Location
@@ -118,11 +144,15 @@ const InventoryFilters = ({
               value={selectedLocation}
               onChange={(e) => onLocationChange(e.target.value)}
             >
-              {locations.map((location) => (
+              {/* Map Specific Locations FIRST */}
+              {specificLocations.map((location) => (
                 <option key={location} value={location}>
-                  {location || "All Locations"}
+                  {location}
                 </option>
               ))}
+
+              {/* Put "All Locations" LAST */}
+              <option value="All">All Locations</option>
             </select>
           </div>
 

@@ -704,7 +704,6 @@ const AddShippingTransfer = ({ onClose, refreshData }) => {
 
           {sendingLocation && (
             <div className="p-4 border rounded-md">
-              {/* ... (product search remains the same) ... */}
               <h3 className="text-lg font-medium text-gray-700 mb-3">
                 Select products to be transferred
               </h3>

@@ -1,17 +1,9 @@
 import React, { useCallback, useEffect, useState } from "react";
-import noImage from "../../../Images/noImage.jpg"; // Default image
 import { domain } from "../../../security";
 import axios from "axios";
 import { toast } from "react-toastify";
 import { PRICE_TYPES } from "./Constant";
 
-const getProductImageUrl = (productImage) => {
-  if (!productImage) return noImage;
-  if (productImage.startsWith("http")) return productImage; // Valid URL
-  return `data:image/jpeg;base64,${productImage}`; // Base64 string
-};
-
-// --- Custom Hook for Inventory Data and Logic ---
 const useInventoryData = () => {
   const [pricelists, setPricelists] = useState([]);
   const [filteredPricelists, setFilteredPricelists] = useState([]);
@@ -24,21 +16,20 @@ const useInventoryData = () => {
   const fetchPricelists = useCallback(async () => {
     setIsLoading(true);
     try {
-      const response = await axios.get(`${domain}/api/Pricelists`);
+      const response = await axios.get(`${domain}/api/products/pos-pricelist`);
+
       const formattedPricelists = response.data.map((item) => ({
         ...item,
-        productImage: getProductImageUrl(item.productImage),
-        // Calculate unsoldCount per item
-        unsoldCount: (item.batches || []).reduce(
-          (total, batch) =>
-            total +
-            (batch.serialNumbers || []).filter((serial) => !serial.isSold)
-              .length,
-          0
-        ),
+        product: item.productName,
+        location: item.locationName,
+        unsoldCount: item.stockCount || 0,
+        brand: item.brandName || "",
+        itemCode: item.itemCode || "",
+        barCode: item.barCode || "",
       }));
 
       setPricelists(formattedPricelists);
+
       const uniqueLocations = [
         "All",
         ...new Set(
@@ -47,8 +38,8 @@ const useInventoryData = () => {
       ];
       setLocations(uniqueLocations);
     } catch (error) {
-      console.error("Failed to fetch pricelists:", error);
-      toast.error("Failed to fetch pricelists. Please try again later.");
+      console.error("Failed to fetch products:", error);
+      toast.error("Failed to fetch products. Please try again later.");
     } finally {
       setIsLoading(false);
     }
@@ -60,21 +51,29 @@ const useInventoryData = () => {
 
   useEffect(() => {
     let filtered = [...pricelists];
+
     if (selectedLocation !== "All") {
       filtered = filtered.filter(
         (pricelist) => pricelist.location === selectedLocation
       );
     }
+
     if (searchQuery) {
       const lowercasedQuery = searchQuery.toLowerCase();
       filtered = filtered.filter((pricelist) =>
         ["product", "location", "brand", "itemCode", "barCode"].some((key) => {
-          const value =
-            pricelist[key] || (pricelist.brand && pricelist.brand.brandName); // Handle nested brandName
-          return (
-            typeof value === "string" &&
-            value.toLowerCase().includes(lowercasedQuery)
-          );
+          const value = pricelist[key];
+          if (typeof value === "string") {
+            return value.toLowerCase().includes(lowercasedQuery);
+          }
+          if (
+            key === "brand" &&
+            typeof value === "object" &&
+            value?.brandName
+          ) {
+            return value.brandName.toLowerCase().includes(lowercasedQuery);
+          }
+          return false;
         })
       );
     }
@@ -92,6 +91,7 @@ const useInventoryData = () => {
     locations,
     priceType,
     setPriceType,
+    refreshData: fetchPricelists, // <--- ADD THIS LINE (expose the function)
   };
 };
 

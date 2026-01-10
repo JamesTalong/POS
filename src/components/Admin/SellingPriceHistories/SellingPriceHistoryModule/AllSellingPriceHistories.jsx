@@ -19,55 +19,37 @@ const AllSellingPriceHistories = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalVisible, setIsModalVisible] = useState(false);
-
-  // State to store the allowed UOMs for specific products
   const [productUomsMap, setProductUomsMap] = useState({});
-
   const [modalConfig, setModalConfig] = useState({
     itemToEdit: null,
     prefillData: null,
   });
-
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(5);
+  const [itemsPerPage] = useState(10);
   const [searchTerm, setSearchTerm] = useState("");
-
-  // Initialize as empty string or a placeholder until data loads
   const [selectedLocation, setSelectedLocation] = useState("");
   const [locations, setLocations] = useState([]);
 
-  // --- 1. Fetch Main Table Data ---
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       const response = await axios.get(`${domain}/api/SellingPriceHistories`);
       setData(response.data);
-
-      // 1. Get Unique Locations from data
       const distinctLocations = [
         ...new Set(
           response.data.map((item) => item.locationName).filter(Boolean)
         ),
       ];
-
-      // 2. Sort them alphabetically
       distinctLocations.sort();
-
-      // 3. Create the list with "All" at the BOTTOM
-      const sortedLocations = [...distinctLocations, "All"];
-      setLocations(sortedLocations);
-
-      // 4. Set Default Selection:
-      // If we have locations, pick the FIRST one. Otherwise default to "All".
-      // We check if selectedLocation is empty so we don't overwrite user selection on refresh/refetch
-      setSelectedLocation((prev) => {
-        if (prev && prev !== "All" && distinctLocations.includes(prev)) {
-          return prev; // Keep current selection if valid
-        }
-        return distinctLocations.length > 0 ? distinctLocations[0] : "All";
-      });
+      setLocations([...distinctLocations, "All"]);
+      setSelectedLocation((prev) =>
+        prev && prev !== "All" && distinctLocations.includes(prev)
+          ? prev
+          : distinctLocations.length > 0
+          ? distinctLocations[0]
+          : "All"
+      );
     } catch (error) {
-      console.error("Error fetching data:", error);
       toast.error("Failed to fetch selling prices.");
     } finally {
       setLoading(false);
@@ -78,7 +60,6 @@ const AllSellingPriceHistories = () => {
     fetchData();
   }, [fetchData]);
 
-  // --- 2. Grouping Logic ---
   const groupedData = useMemo(() => {
     const groups = {};
     data.forEach((item) => {
@@ -95,303 +76,238 @@ const AllSellingPriceHistories = () => {
           promos: [],
         };
       }
-      if (item.endDate) {
-        groups[key].promos.push(item);
-      } else {
-        groups[key].standardPrices[item.uom] = item;
-      }
+      if (item.endDate) groups[key].promos.push(item);
+      else groups[key].standardPrices[item.uom] = item;
     });
     return Object.values(groups);
   }, [data]);
 
-  // --- 3. Filtering ---
   const filteredGroups = groupedData.filter((group) => {
-    const safeStr = (str) => (str ? String(str).toLowerCase() : "");
-    const searchString = `${safeStr(group.productName)} ${safeStr(
-      group.locationName
-    )}`.toLowerCase();
-
-    // Logic: If "All" is selected, show everything.
-    // Otherwise, match the specific location name.
     const matchesLocation =
       selectedLocation === "All" || group.locationName === selectedLocation;
-
-    return searchString.includes(searchTerm.toLowerCase()) && matchesLocation;
+    return (
+      (group.productName || "")
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase()) && matchesLocation
+    );
   });
 
   const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentItems = filteredGroups.slice(indexOfFirstItem, indexOfLastItem);
-  const paginate = (pageNumber) => setCurrentPage(pageNumber);
+  const currentItems = filteredGroups.slice(
+    indexOfLastItem - itemsPerPage,
+    indexOfLastItem
+  );
 
-  // --- 4. SMART LOGIC: Fetch UOM Definitions for VISIBLE Items ---
   useEffect(() => {
-    const fetchDefinitionsForVisibleItems = async () => {
-      const visibleProductIds = [
+    const fetchUoms = async () => {
+      const visibleIds = [
         ...new Set(currentItems.map((item) => item.productId)),
-      ];
-
-      const idsToFetch = visibleProductIds.filter((id) => !productUomsMap[id]);
-
-      if (idsToFetch.length === 0) return;
-
-      const fetchedResults = await Promise.all(
-        idsToFetch.map(async (id) => {
+      ].filter((id) => !productUomsMap[id]);
+      if (visibleIds.length === 0) return;
+      const results = await Promise.all(
+        visibleIds.map(async (id) => {
           try {
             const res = await axios.get(
               `${domain}/api/Products/${id}/pricing-uoms`
             );
             return { id, uoms: res.data };
-          } catch (err) {
-            console.error(`Failed to load UOMs for product ${id}`, err);
+          } catch {
             return { id, uoms: [] };
           }
         })
       );
-
-      setProductUomsMap((prev) => {
-        const newMap = { ...prev };
-        fetchedResults.forEach((res) => {
-          newMap[res.id] = res.uoms;
-        });
-        return newMap;
-      });
+      setProductUomsMap((prev) => ({
+        ...prev,
+        ...Object.fromEntries(results.map((r) => [r.id, r.uoms])),
+      }));
     };
-
-    if (currentItems.length > 0) {
-      fetchDefinitionsForVisibleItems();
-    }
+    if (currentItems.length > 0) fetchUoms();
   }, [currentItems, productUomsMap]);
 
-  // --- Actions ---
   const openEdit = (item) => {
     setModalConfig({ itemToEdit: item, prefillData: null });
     setIsModalVisible(true);
   };
-
   const openAdd = (productId, locationId, uomCode, isSpecial = false) => {
     const prefillData = productId
       ? { productId, locationId, prefillUom: uomCode, isSpecial }
       : null;
-
     setModalConfig({ itemToEdit: null, prefillData });
     setIsModalVisible(true);
   };
-
   const deleteItem = async (id) => {
-    if (!window.confirm("Delete this price?")) return;
-    try {
-      await axios.delete(`${domain}/api/SellingPriceHistories/${id}`);
-      toast.success("Deleted");
-      fetchData();
-    } catch (error) {
-      toast.error("Failed to delete.");
+    if (window.confirm("Delete this price?")) {
+      try {
+        await axios.delete(`${domain}/api/SellingPriceHistories/${id}`);
+        toast.success("Deleted");
+        fetchData();
+      } catch {
+        toast.error("Failed to delete.");
+      }
     }
   };
 
-  const closeModal = () => {
-    setIsModalVisible(false);
-    setModalConfig({ itemToEdit: null, prefillData: null });
-  };
-
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat("en-PH", {
-      style: "currency",
-      currency: "PHP",
-    }).format(amount || 0);
-  };
-
   return (
-    <div className="min-h-screen bg-gray-50/50 pb-12 relative font-sans">
+    <div className="min-h-screen bg-slate-50/50 pb-12 font-sans">
       <ToastContainer position="top-right" autoClose={3000} />
 
-      {/* Header Area */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-20 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <h1 className="text-2xl font-bold text-gray-900">
-              Selling Price Management
-            </h1>
-            <div className="flex gap-2 w-full md:w-auto">
-              <div className="relative flex-1 md:w-64">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search Product..."
-                  className="w-full pl-9 pr-4 py-2 bg-gray-100 rounded-lg text-sm outline-none focus:ring-2 focus:ring-green-500/20"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
-
-              {/* Location Dropdown */}
-              <select
-                value={selectedLocation}
-                onChange={(e) => setSelectedLocation(e.target.value)}
-                className="px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm"
-              >
-                {locations.map((loc) => (
-                  <option key={loc} value={loc}>
-                    {loc === "All" ? "All Locations" : loc}
-                  </option>
-                ))}
-              </select>
-
-              <button
-                onClick={() => openAdd(null, null, null)}
-                className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold px-4 py-2 rounded-xl shadow transition-all hover:shadow-md active:scale-95"
-              >
-                <Plus size={18} strokeWidth={2.2} /> <span>Add Price</span>
-              </button>
+      {/* --- Reference-Style Header --- */}
+      <div className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-20">
+        <div className="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                <Zap className="text-indigo-600" /> Selling Price Management
+              </h1>
+              <p className="text-sm text-slate-500 mt-1">
+                Manage standard pricing and promotional offers per branch.
+              </p>
             </div>
+            <button
+              onClick={() => openAdd(null, null, null)}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-5 py-2.5 rounded-lg shadow-sm transition-all active:scale-95"
+            >
+              <Plus size={18} /> Add New Price
+            </button>
           </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 mt-6">
+      <div className="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 mt-6">
+        {/* --- Filters (Minimal Adjustment) --- */}
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 grid md:grid-cols-3 gap-4 mb-6">
+          <div className="relative md:col-span-2">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search by Product Name..."
+              className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition-shadow text-sm"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <div className="relative">
+            <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <select
+              value={selectedLocation}
+              onChange={(e) => setSelectedLocation(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition-shadow text-sm appearance-none bg-white font-medium text-slate-700"
+            >
+              {locations.map((loc) => (
+                <option key={loc} value={loc}>
+                  {loc === "All" ? "All Locations" : loc}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* --- Table Area --- */}
         {loading ? (
           <Loader />
         ) : (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <table className="w-full text-left">
-              <thead className="bg-gray-50 border-b border-gray-200 text-xs uppercase text-gray-500 font-semibold">
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500 font-semibold">
                 <tr>
                   <th className="px-6 py-4 w-1/4">Product & Location</th>
                   <th className="px-6 py-4 w-3/4">Pricing Configuration</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-slate-100">
                 {currentItems.length > 0 ? (
                   currentItems.map((group) => {
                     const allowedUomObjects =
                       productUomsMap[group.productId] || [];
-
                     allowedUomObjects.sort((a, b) =>
                       (a.code || "").localeCompare(b.code || "")
                     );
-
                     return (
-                      <tr key={group.uniqueKey} className="hover:bg-gray-50/50">
+                      <tr
+                        key={group.uniqueKey}
+                        className="hover:bg-slate-50/50 transition"
+                      >
                         <td className="px-6 py-6 align-top">
-                          <div className="flex flex-col gap-1">
-                            <span className="font-bold text-gray-900 text-lg">
+                          <div className="flex flex-col">
+                            <span className="font-bold text-slate-800 text-lg">
                               {group.productName}
                             </span>
-                            <div className="flex items-center gap-1 text-sm text-gray-500">
-                              <MapPin size={14} className="text-gray-400" />{" "}
-                              {group.locationName}
-                            </div>
+                            <span className="flex items-center gap-1 text-slate-400 text-xs mt-1">
+                              <MapPin size={12} /> {group.locationName}
+                            </span>
                           </div>
                         </td>
-
                         <td className="px-6 py-4 align-top">
                           <div className="flex flex-col gap-4">
                             <div className="flex flex-wrap items-center gap-3">
-                              <span className="text-xs font-bold text-gray-400 uppercase w-16">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase w-16">
                                 Standard:
                               </span>
-
-                              {allowedUomObjects.length > 0 ? (
-                                allowedUomObjects.map((uomObj) => {
-                                  const lookupKey = uomObj.code;
-                                  const priceItem =
-                                    group.standardPrices[lookupKey];
-                                  const displayLabel =
-                                    uomObj.name || uomObj.code;
-
-                                  if (priceItem) {
-                                    return (
-                                      <div
-                                        key={lookupKey}
-                                        className="relative group"
-                                      >
-                                        <button
-                                          onClick={() => openEdit(priceItem)}
-                                          className="flex flex-col items-center justify-center min-w-[100px] p-2 bg-white border-2 border-green-100 hover:border-green-500 rounded-lg shadow-sm transition-all"
-                                        >
-                                          <span className="text-[10px] font-bold text-gray-500 uppercase">
-                                            {displayLabel}
-                                          </span>
-                                          <span className="font-bold text-gray-900">
-                                            {formatCurrency(priceItem.vatInc)}
-                                          </span>
-                                        </button>
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            deleteItem(priceItem.id);
-                                          }}
-                                          className="absolute -top-2 -right-2 bg-red-100 text-red-500 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                                        >
-                                          <Trash2 size={12} />
-                                        </button>
-                                      </div>
-                                    );
-                                  } else {
-                                    return (
-                                      <button
-                                        key={lookupKey}
-                                        onClick={() =>
-                                          openAdd(
-                                            group.productId,
-                                            group.locationId,
-                                            lookupKey
-                                          )
-                                        }
-                                        className="flex flex-col items-center justify-center min-w-[100px] h-[58px] border-2 border-dashed border-gray-200 rounded-lg text-gray-400 hover:border-green-400 hover:text-green-600 hover:bg-green-50 transition-all gap-1"
-                                      >
-                                        <Plus size={14} />
-                                        <span className="text-[10px] font-bold uppercase">
-                                          Add {displayLabel}
-                                        </span>
-                                      </button>
-                                    );
-                                  }
-                                })
-                              ) : Object.values(group.standardPrices).length >
-                                0 ? (
-                                Object.values(group.standardPrices).map(
-                                  (priceItem) => (
+                              {allowedUomObjects.map((uomObj) => {
+                                const priceItem =
+                                  group.standardPrices[uomObj.code];
+                                return priceItem ? (
+                                  <div
+                                    key={uomObj.code}
+                                    className="relative group"
+                                  >
                                     <button
-                                      key={priceItem.id}
                                       onClick={() => openEdit(priceItem)}
-                                      className="flex flex-col items-center justify-center min-w-[100px] p-2 bg-white border-2 border-green-100 hover:border-green-500 rounded-lg shadow-sm transition-all"
+                                      className="flex flex-col items-center min-w-[100px] p-2 bg-white border-2 border-indigo-50 hover:border-indigo-500 rounded-lg shadow-sm transition-all"
                                     >
-                                      <span className="text-[10px] font-bold text-gray-500 uppercase">
-                                        {priceItem.uom}
+                                      <span className="text-[9px] font-bold text-slate-400 uppercase">
+                                        {uomObj.name || uomObj.code}
                                       </span>
-                                      <span className="font-bold text-gray-900">
-                                        {formatCurrency(priceItem.vatInc)}
+                                      <span className="font-bold text-slate-800">
+                                        ₱{priceItem.vatInc.toLocaleString()}
                                       </span>
                                     </button>
-                                  )
-                                )
-                              ) : (
-                                <div className="text-xs text-gray-400 italic">
-                                  Loading configuration...
-                                </div>
-                              )}
+                                    <button
+                                      onClick={() => deleteItem(priceItem.id)}
+                                      className="absolute -top-2 -right-2 bg-red-100 text-red-500 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    key={uomObj.code}
+                                    onClick={() =>
+                                      openAdd(
+                                        group.productId,
+                                        group.locationId,
+                                        uomObj.code
+                                      )
+                                    }
+                                    className="flex flex-col items-center justify-center min-w-[100px] h-[54px] border-2 border-dashed border-slate-200 rounded-lg text-slate-400 hover:border-indigo-400 hover:text-indigo-600 transition-all gap-1"
+                                  >
+                                    <Plus size={14} />
+                                    <span className="text-[9px] font-bold uppercase">
+                                      Add {uomObj.code}
+                                    </span>
+                                  </button>
+                                );
+                              })}
                             </div>
-
-                            <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-gray-100">
-                              <span className="text-xs font-bold text-orange-400 uppercase w-16 flex items-center gap-1">
-                                <Zap size={12} /> Promos:
+                            <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-slate-100">
+                              <span className="text-[10px] font-bold text-orange-400 uppercase w-16 flex items-center gap-1">
+                                <Zap size={10} /> Promos:
                               </span>
                               {group.promos.map((promo) => (
                                 <div key={promo.id} className="relative group">
                                   <button
                                     onClick={() => openEdit(promo)}
-                                    className="flex flex-col items-start min-w-[140px] px-3 py-2 bg-orange-50 border border-orange-200 hover:border-orange-400 rounded-lg transition-all"
+                                    className="flex flex-col px-3 py-2 bg-orange-50/50 border border-orange-200 hover:border-orange-400 rounded-lg transition-all"
                                   >
-                                    <div className="flex justify-between w-full">
-                                      <span className="text-[10px] font-bold text-orange-600 uppercase">
+                                    <div className="flex justify-between gap-4">
+                                      <span className="text-[9px] font-bold text-orange-600 uppercase">
                                         {promo.uom}
                                       </span>
-                                      <span className="font-bold text-gray-900 text-sm">
-                                        {formatCurrency(promo.vatInc)}
+                                      <span className="font-bold text-slate-800">
+                                        ₱{promo.vatInc.toLocaleString()}
                                       </span>
                                     </div>
-                                    <span className="text-[10px] text-gray-500 mt-1">
+                                    <span className="text-[9px] text-slate-500 mt-0.5 font-medium">
                                       Ends:{" "}
                                       {new Date(
                                         promo.endDate
@@ -399,11 +315,8 @@ const AllSellingPriceHistories = () => {
                                     </span>
                                   </button>
                                   <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      deleteItem(promo.id);
-                                    }}
-                                    className="absolute -top-2 -right-2 bg-white border border-red-100 text-red-500 rounded-full p-1 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                                    onClick={() => deleteItem(promo.id)}
+                                    className="absolute -top-2 -right-2 bg-white border border-red-100 text-red-500 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
                                   >
                                     <Trash2 size={10} />
                                   </button>
@@ -418,9 +331,9 @@ const AllSellingPriceHistories = () => {
                                     true
                                   )
                                 }
-                                className="flex items-center gap-1 px-3 py-2 text-xs font-bold text-orange-600 border border-orange-200 border-dashed rounded-lg hover:bg-orange-50 transition-all"
+                                className="flex items-center gap-1 px-3 py-2 text-[10px] font-bold text-orange-600 border border-orange-200 border-dashed rounded-lg hover:bg-orange-50 transition-all"
                               >
-                                <Plus size={12} /> Add Promo
+                                <Plus size={10} /> Add Promo
                               </button>
                             </div>
                           </div>
@@ -430,19 +343,22 @@ const AllSellingPriceHistories = () => {
                   })
                 ) : (
                   <tr>
-                    <td colSpan="2" className="text-center py-10 text-gray-500">
-                      No selling prices found for the selected location.
+                    <td
+                      colSpan="2"
+                      className="text-center py-10 text-slate-400"
+                    >
+                      No selling prices found.
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
-            <div className="p-4 border-t border-gray-100">
+            <div className="p-4 border-t border-slate-100">
               <Pagination
                 itemsPerPage={itemsPerPage}
                 totalItems={filteredGroups.length}
                 currentPage={currentPage}
-                paginate={paginate}
+                paginate={setCurrentPage}
               />
             </div>
           </div>
@@ -450,10 +366,10 @@ const AllSellingPriceHistories = () => {
       </div>
 
       {isModalVisible && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-3xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-3xl bg-white rounded-2xl shadow-2xl overflow-hidden">
             <AddSellingPrice
-              onClose={closeModal}
+              onClose={() => setIsModalVisible(false)}
               refreshData={fetchData}
               itemToEdit={modalConfig.itemToEdit}
               prefillData={modalConfig.prefillData}

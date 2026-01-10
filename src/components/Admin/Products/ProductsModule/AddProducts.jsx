@@ -119,7 +119,6 @@ const AddProducts = ({ onClose, refreshData, productToEdit }) => {
       if (productToEdit) {
         setIsLoading(true);
         try {
-          // 1. Initial set from the passed prop
           setFormData((prev) => ({
             ...prev,
             productName: productToEdit.productName || "",
@@ -140,13 +139,11 @@ const AddProducts = ({ onClose, refreshData, productToEdit }) => {
             baseUomId: productToEdit.baseUomId || null,
           }));
 
-          // 2. Fetch specific product to get the Image string
           const response = await axios.get(
             `${domain}/api/Products/${productToEdit.id}`
           );
           const fullProduct = response.data;
 
-          // 3. Handle the Image preview
           if (fullProduct.productImage) {
             const imageSrc = fullProduct.productImage.startsWith("data:image")
               ? fullProduct.productImage
@@ -160,7 +157,6 @@ const AddProducts = ({ onClose, refreshData, productToEdit }) => {
             setPreviewImage(profile);
           }
 
-          // 4. Fetch Conversions
           await fetchUomConversions(productToEdit.id);
         } catch (error) {
           console.error("Error fetching full product details:", error);
@@ -226,10 +222,7 @@ const AddProducts = ({ onClose, refreshData, productToEdit }) => {
   };
 
   // --- UOM CONVERSION HANDLERS ---
-  // Inside AddProducts.jsx
-
   const handleAddConversion = () => {
-    // 1. Basic Validation
     if (
       !newConversion.fromUomId ||
       !newConversion.toUomId ||
@@ -244,23 +237,17 @@ const AddProducts = ({ onClose, refreshData, productToEdit }) => {
     const selectedFromUomId = Number(newConversion.fromUomId);
     let enteredRate = parseFloat(newConversion.conversionRate);
 
-    // 2. Logic to Flatten Chained Conversions (Box -> Kg -> Pcs)
     let finalRate = enteredRate;
     let finalToUomId = selectedToUomId;
 
-    // We need to find the full path to the Base UOM
     if (selectedToUomId !== baseUomId) {
-      // Attempt to find a rule that links the selected "To Unit" (e.g., Kg) to the Base (Pcs)
       const parentRule = conversionList.find(
         (c) => c.fromUomId === selectedToUomId && c.toUomId === baseUomId
       );
 
       if (parentRule) {
-        // Logic: 1 Box = 10 Kg, and we found 1 Kg = 10 Pcs.
-        // Calculation: 10 * 10 = 100 Pcs.
         finalRate = enteredRate * parentRule.conversionRate;
-        finalToUomId = baseUomId; // We force the target to be the Base Unit
-
+        finalToUomId = baseUomId;
         toast.info(
           `Auto-calculated: 1 ${
             unitOfMeasurements.find((u) => u.id === selectedFromUomId)?.code
@@ -269,8 +256,6 @@ const AddProducts = ({ onClose, refreshData, productToEdit }) => {
           }`
         );
       } else {
-        // If we can't find a path to the base, we warn the user.
-        // This enforces defining "Kg -> Pcs" BEFORE defining "Box -> Kg"
         toast.error(
           "Please define the conversion to the Base Unit first. (e.g., Define Kg -> Pcs before defining Box -> Kg)"
         );
@@ -278,25 +263,21 @@ const AddProducts = ({ onClose, refreshData, productToEdit }) => {
       }
     }
 
-    // 3. Prepare Display Objects
     const fromUomObj = unitOfMeasurements.find(
       (u) => u.id === selectedFromUomId
     );
     const toUomObj = unitOfMeasurements.find((u) => u.id === finalToUomId);
 
-    // 4. Construct the Item
     const item = {
       id: null,
       fromUomId: selectedFromUomId,
       toUomId: finalToUomId,
-      // Add these string properties so the table displays correctly immediately
       fromUomCode: fromUomObj ? fromUomObj.code : "",
       toUomCode: toUomObj ? toUomObj.code : "",
       conversionRate: finalRate,
       productId: productToEdit ? productToEdit.id : null,
     };
 
-    // Check for duplicates
     const exists = conversionList.some((c) => c.fromUomId === item.fromUomId);
     if (exists) {
       toast.error("A conversion rule for this unit already exists.");
@@ -325,6 +306,58 @@ const AddProducts = ({ onClose, refreshData, productToEdit }) => {
   // --- MAIN SUBMIT HANDLER ---
   const handleFormSubmit = async (e) => {
     e.preventDefault();
+
+    // ==========================================
+    // REQUIRED CONVERSION VALIDATION
+    // ==========================================
+    const baseUomId = Number(formData.baseUomId);
+    const salesUomId = Number(formData.salesUomId);
+    const purchaseUomId = Number(formData.purchaseUomId);
+
+    if (!baseUomId) {
+      toast.error("Base UOM is required.");
+      return;
+    }
+
+    // 1. Validate Sales UOM Conversion
+    if (salesUomId && salesUomId !== baseUomId) {
+      const hasSalesConversion = conversionList.some(
+        (c) => c.fromUomId === salesUomId
+      );
+
+      if (!hasSalesConversion) {
+        const salesUomName =
+          unitOfMeasurements.find((u) => u.id === salesUomId)?.code || "Sales";
+        const baseUomName =
+          unitOfMeasurements.find((u) => u.id === baseUomId)?.code || "Base";
+
+        toast.error(
+          `Sales UOM (${salesUomName}) is different from Base UOM (${baseUomName}). Please add a conversion rule in the table.`
+        );
+        return;
+      }
+    }
+
+    // 2. Validate Purchase UOM Conversion
+    if (purchaseUomId && purchaseUomId !== baseUomId) {
+      const hasPurchaseConversion = conversionList.some(
+        (c) => c.fromUomId === purchaseUomId
+      );
+
+      if (!hasPurchaseConversion) {
+        const purchaseUomName =
+          unitOfMeasurements.find((u) => u.id === purchaseUomId)?.code ||
+          "Purchase";
+        const baseUomName =
+          unitOfMeasurements.find((u) => u.id === baseUomId)?.code || "Base";
+
+        toast.error(
+          `Purchase UOM (${purchaseUomName}) is different from Base UOM (${baseUomName}). Please add a conversion rule in the table.`
+        );
+        return;
+      }
+    }
+
     setIsLoading(true);
 
     let imageToBeSaved = null;
@@ -357,11 +390,9 @@ const AddProducts = ({ onClose, refreshData, productToEdit }) => {
       categoryFiveId: formData.categoryFiveId
         ? Number(formData.categoryFiveId)
         : null,
-      salesUomId: formData.salesUomId ? Number(formData.salesUomId) : null,
-      purchaseUomId: formData.purchaseUomId
-        ? Number(formData.purchaseUomId)
-        : null,
-      baseUomId: formData.baseUomId ? Number(formData.baseUomId) : null,
+      salesUomId: salesUomId || null,
+      purchaseUomId: purchaseUomId || null,
+      baseUomId: baseUomId || null,
     };
 
     try {
@@ -683,13 +714,14 @@ const AddProducts = ({ onClose, refreshData, productToEdit }) => {
                   <div className="col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-gray-200 pt-4 mt-2">
                     <div>
                       <label className="block text-sm font-medium mb-1">
-                        Base UOM
+                        Base UOM *
                       </label>
                       <select
                         id="baseUomId"
                         value={formData.baseUomId || ""}
                         onChange={handleInputChange}
                         className="w-full rounded-md border-gray-300 p-2 border"
+                        required
                       >
                         <option value="">Select Base Unit</option>
                         {unitOfMeasurements.map((u) => (
@@ -776,11 +808,33 @@ const AddProducts = ({ onClose, refreshData, productToEdit }) => {
                       className="w-full border p-2 rounded mt-1"
                     >
                       <option value="">Select Unit</option>
-                      {unitOfMeasurements.map((u) => (
-                        <option key={u.id} value={u.id}>
-                          1 {u.code}
-                        </option>
-                      ))}
+                      {/* 
+                         FILTERING LOGIC:
+                         Only show units that are currently selected as Sales or Purchase UOM
+                         AND are different from the Base UOM.
+                      */}
+                      {unitOfMeasurements
+                        .filter((u) => {
+                          const uId = u.id;
+                          const bId = Number(formData.baseUomId);
+                          const sId = Number(formData.salesUomId);
+                          const pId = Number(formData.purchaseUomId);
+
+                          // Check if this unit is Sales UOM and Sales != Base
+                          const isSalesNeeded =
+                            sId && uId === sId && sId !== bId;
+
+                          // Check if this unit is Purchase UOM and Purchase != Base
+                          const isPurchaseNeeded =
+                            pId && uId === pId && pId !== bId;
+
+                          return isSalesNeeded || isPurchaseNeeded;
+                        })
+                        .map((u) => (
+                          <option key={u.id} value={u.id}>
+                            1 {u.code}
+                          </option>
+                        ))}
                     </select>
                   </div>
                   <div className="flex-1 w-full">
@@ -799,7 +853,6 @@ const AddProducts = ({ onClose, refreshData, productToEdit }) => {
                     >
                       <option value="">Select Unit</option>
                       {unitOfMeasurements
-                        // 👇 CHANGE IS HERE: Filter to include ONLY the Base Unit
                         .filter((u) => u.id === Number(formData.baseUomId))
                         .map((u) => (
                           <option key={u.id} value={u.id}>

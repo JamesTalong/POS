@@ -12,8 +12,7 @@ import { Provider } from "react-redux";
 import { PersistGate } from "redux-persist/integration/react";
 import { store, persistor } from "../src/redux/store";
 import SignIn from "./pages/Account/SignIn";
-import SignUp from "./pages/Account/SignUp";
-import Reset from "./pages/Account/Reset";
+
 import Admin from "./pages/Admin/Admin";
 import Dashboard from "./components/Admin/Dashboard/Dashboard";
 import UsersComponent from "./components/Admin/User/Users"; // Renamed to avoid conflict with lucide-react
@@ -52,15 +51,16 @@ import PurchasePriceHistories from "./components/Admin/PurchasePriceHistories/Pu
 import SalesQuotations from "./components/Admin/SalesQuotations/SalesQuotations";
 import SalesOrders from "./components/Admin/SalesOrders/SalesOrders";
 import DeliveryOrders from "./components/Admin/DeliveryOrders/DeliveryOrders";
+import InventoryOverride from "./components/Admin/InventoryOverride/InventoryOverride";
 
 const App = () => {
   const router = createBrowserRouter(
     createRoutesFromElements(
       <Route>
         {/* Public Routes for Sign In/Sign Up */}
-        <Route path="/signup" element={<SignUp />} />
+
         <Route path="/signin" element={<SignIn />} />
-        <Route path="/reset" element={<Reset />} />
+
         <Route path="/change-password" element={<ChangePassword />} />
         <Route path="/admin" element={<Admin />}>
           <Route index element={<Navigate to="dashboard" />} />
@@ -77,6 +77,7 @@ const App = () => {
             path="PurchasePriceHistories"
             element={<PurchasePriceHistories />}
           />
+          <Route path="InventoryOverride" element={<InventoryOverride />} />
           <Route path="DeliveryOrders" element={<DeliveryOrders />} />
           <Route path="SalesQuotations" element={<SalesQuotations />} />
           <Route path="UnitOfMeasurement" element={<UnitOfMeasurement />} />

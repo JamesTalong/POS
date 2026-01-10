@@ -1,49 +1,60 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { ToastContainer } from "react-toastify";
 
-import TransferInventoryModal from "./AddTransfer"; // Assuming this is the correct path for Component 2
+import TransferInventoryModal from "./AddTransfer";
 import TransferHistoryTable from "./TransferHistoryTable";
 import ReceivedTransfer from "./ReceivedTransfer";
 
 const Transfer = () => {
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [refreshTransferHistory, setRefreshTransferHistory] = useState(false);
-  const [refreshReceivedTransfer, setRefreshReceivedTransfer] = useState(false); // New state for ReceivedTransfer
+  const [refreshReceivedTransfer, setRefreshReceivedTransfer] = useState(false);
 
-  const handleOpenTransferModal = () => {
-    setIsTransferModalOpen(true);
-  };
+  const handleOpenTransferModal = () => setIsTransferModalOpen(true);
+  const handleCloseTransferModal = () => setIsTransferModalOpen(false);
 
-  const handleCloseTransferModal = () => {
-    setIsTransferModalOpen(false);
-  };
-
-  const triggerTransferHistoryRefresh = () => {
+  const triggerTransferHistoryRefresh = () =>
     setRefreshTransferHistory((prev) => !prev);
-  };
-
-  const triggerReceivedTransferRefresh = () => {
+  const triggerReceivedTransferRefresh = () =>
     setRefreshReceivedTransfer((prev) => !prev);
-  };
 
   return (
-    <div className="p-4 sm:p-6">
+    <div className="max-w-7xl mx-auto p-4 sm:p-8 font-sans text-gray-800">
       <ToastContainer position="top-right" autoClose={3000} />
-      <h1 className="text-2xl sm:text-3xl font-semibold text-center text-gray-800 mb-6 sm:mb-8">
-        All Transfer Items
-      </h1>
-      <button
-        onClick={() => handleOpenTransferModal()} // Pass the specific product
-        className="mt-2 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold py-1 px-3 rounded-md shadow-sm transition-colors duration-150"
-      >
-        Transfer This Item
-      </button>
 
-      <TransferHistoryTable
-        refreshTrigger={refreshTransferHistory}
-        onReceiveSuccess={triggerReceivedTransferRefresh} // Pass the new refresh function
-      />
-      <ReceivedTransfer refreshTrigger={refreshReceivedTransfer} />
+      {/* Header Section */}
+      <div className="flex flex-col sm:flex-row justify-between items-end sm:items-center mb-8 border-b border-gray-200 pb-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">
+            Transfer Management
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Manage outgoing and received inventory items.
+          </p>
+        </div>
+        <button
+          onClick={handleOpenTransferModal}
+          className="mt-4 sm:mt-0 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium py-2 px-4 rounded-md shadow-sm transition-all"
+        >
+          + New Transfer
+        </button>
+      </div>
+
+      <div className="space-y-12">
+        {/* Section 1: Active Transfers */}
+        <section>
+          <TransferHistoryTable
+            refreshTrigger={refreshTransferHistory}
+            onReceiveSuccess={triggerReceivedTransferRefresh}
+          />
+        </section>
+
+        {/* Section 2: History */}
+        <section>
+          <ReceivedTransfer refreshTrigger={refreshReceivedTransfer} />
+        </section>
+      </div>
+
       {isTransferModalOpen && (
         <TransferInventoryModal
           onClose={handleCloseTransferModal}

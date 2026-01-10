@@ -3,34 +3,41 @@ import axios from "axios";
 import { toast } from "react-toastify";
 import { domain } from "../../../security";
 import ReceivedItemModal from "./ReceivedItemModal";
-import { useSelector } from "react-redux";
-// --- 1. UPDATED: Using selectUserName for consistency ---
-import { selectUserName } from "../../../redux/IchthusSlice";
+import ViewManifestModal from "./ViewManifestModal";
+import Pagination from "../Pagination";
+import Loader from "../../loader/Loader";
+// Only keeping the Search icon as it's standard UX
+import { FaSearch } from "react-icons/fa";
 
 const TransferHistoryTable = ({ refreshTrigger, onReceiveSuccess }) => {
-  // --- State Management ---
   const [transfers, setTransfers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(5);
+
+  const [receiveModalOpen, setReceiveModalOpen] = useState(false);
+  const [viewItemsModalOpen, setViewItemsModalOpen] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState(null);
 
-  // --- 2. UPDATED: Using userName from Redux store ---
-  const userName = useSelector(selectUserName);
-
-  // --- 3. OPTIMIZED: Memoized fetch function for stability ---
   const fetchTransfers = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const apiUrl = `${domain}/api/Transfers`;
-      const response = await axios.get(apiUrl, {
-        headers: { "Content-Type": "application/json" },
-      });
-      setTransfers(response.data);
+      const response = await axios.get(apiUrl);
+      const activeTransfers = response.data
+        .filter((t) => t.status === "In Transit")
+        .sort(
+          (a, b) => new Date(b.transferredDate) - new Date(a.transferredDate)
+        );
+      setTransfers(activeTransfers);
+      setCurrentPage(1);
     } catch (err) {
+      console.error(err);
       setError(err);
-      toast.error("Failed to fetch awaiting transfers.");
+      toast.error("Failed to fetch transfers.");
     } finally {
       setLoading(false);
     }
@@ -38,202 +45,239 @@ const TransferHistoryTable = ({ refreshTrigger, onReceiveSuccess }) => {
 
   useEffect(() => {
     fetchTransfers();
-  }, [refreshTrigger, fetchTransfers]); // Effect depends on the memoized function
+  }, [refreshTrigger, fetchTransfers]);
+
+  const filteredTransfers = transfers.filter((t) => {
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      t.id.toString().includes(query) ||
+      (t.fromLocationName &&
+        t.fromLocationName.toLowerCase().includes(query)) ||
+      (t.toLocationName && t.toLocationName.toLowerCase().includes(query))
+    );
+  });
+
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentTransfers = filteredTransfers.slice(
+    indexOfFirstItem,
+    indexOfLastItem
+  );
+  const paginate = (pageNumber) => setCurrentPage(pageNumber);
+
+  const handleSearchChange = (e) => {
+    setSearchQuery(e.target.value);
+    setCurrentPage(1);
+  };
 
   const formatDate = (dateString) => {
     if (!dateString) return "N/A";
-    const options = { year: "numeric", month: "long", day: "numeric" };
-    return new Date(dateString).toLocaleDateString(undefined, options);
+    return new Date(dateString).toLocaleDateString("en-US", {
+      month: "short",
+      day: "2-digit",
+      year: "numeric",
+    });
   };
 
-  // --- 4. IMPROVED: Using toast for confirmation and feedback ---
   const handleRevert = async (id) => {
-    if (!window.confirm(`Are you sure you want to cancel transfer ID ${id}?`)) {
+    if (!window.confirm(`Are you sure you want to cancel Transfer #${id}?`))
       return;
-    }
-
     const revertPromise = axios.post(`${domain}/api/Transfers/revert/${id}`);
-
     toast.promise(revertPromise, {
-      pending: `Cancelling transfer ID ${id}...`,
+      pending: "Cancelling...",
       success: {
         render() {
-          fetchTransfers(); // Re-fetch data on success
-          return `Transfer ID ${id} was successfully cancelled.`;
+          fetchTransfers();
+          return `Transfer #${id} cancelled.`;
         },
       },
-      error: `Failed to cancel transfer ID ${id}.`,
+      error: "Failed to cancel.",
     });
   };
 
-  const handleConfirmReceive = async (transfer, processedItems) => {
-    const receivePromise = new Promise(async (resolve, reject) => {
-      try {
-        const payload = {
-          transferId: transfer.id,
-          fromLocation: transfer.fromLocation,
-          toLocation: transfer.toLocation,
-          status: "Completed",
-          releaseBy: transfer.releaseBy,
-          receiveBy: userName, // Using updated userName
-          transferredDate: transfer.transferredDate,
-          RecievedDate: new Date().toISOString(),
-          items: processedItems.map((item) => ({
-            receiverPricelistId: item.receiverPricelistId,
-            PricelistId: item.PricelistId,
-            quantity: item.quantity,
-            serialNumbers: item.serialNumbers.map((sn) => ({
-              serialNumberId: sn.id,
-              status: sn.status,
-              serialName: sn.serialName,
-            })),
-          })),
-        };
-
-        await axios.post(`${domain}/api/CompletedTransfers`, payload);
-
-        // --- 5. RELIABLE STATE: Call external refresh triggers on success ---
-        if (onReceiveSuccess) {
-          onReceiveSuccess();
+  const openReceiveModal = async (transferSummary) => {
+    try {
+      const res = await axios.get(
+        `${domain}/api/Transfers/${transferSummary.id}`
+      );
+      const fullData = res.data;
+      // Processing logic...
+      const processedItems = fullData.items.map((item) => {
+        let serials = [];
+        if (item.serialNumberIds?.length > 0) {
+          serials = item.serialNumberIds.map((id) => ({
+            id: id,
+            serialName: `Ref #${id}`,
+          }));
         }
-        closeReceiveModal(); // This function will trigger a local refresh
-        resolve(); // Resolve promise for toast
-      } catch (err) {
-        console.error(
-          "Receive failed:",
-          err.response ? err.response.data : err.message
-        );
-        reject(err); // Reject promise for toast
-      }
-    });
-
-    toast.promise(receivePromise, {
-      pending: `Receiving transfer ID ${transfer.id}...`,
-      success: `Transfer ID ${transfer.id} successfully received.`,
-      error: `Failed to receive transfer ID ${transfer.id}. Please try again.`,
-    });
+        return { ...item, serialNumbers: serials };
+      });
+      setSelectedTransfer({ ...fullData, items: processedItems });
+      setReceiveModalOpen(true);
+    } catch (e) {
+      toast.error("Could not load details.");
+    }
   };
 
-  const openReceiveModal = (transfer) => {
+  const openViewItemsModal = (transfer) => {
     setSelectedTransfer(transfer);
-    setIsModalOpen(true);
+    setViewItemsModalOpen(true);
   };
 
-  // Closing the modal triggers a data refresh to ensure the list is up-to-date
-  const closeReceiveModal = () => {
-    setIsModalOpen(false);
-    setSelectedTransfer(null);
-    fetchTransfers();
+  const handleConfirmReceive = async (transfer, payloadDto) => {
+    try {
+      await axios.post(`${domain}/api/ReceivedTransfers`, payloadDto);
+      toast.success(`Transfer #${transfer.id} received.`);
+      setReceiveModalOpen(false);
+      setSelectedTransfer(null);
+      if (onReceiveSuccess) onReceiveSuccess();
+      fetchTransfers();
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Failed to receive.");
+    }
   };
 
   if (loading)
     return (
-      <p className="text-center text-gray-600 py-4">Loading transfers...</p>
+      <div className="p-8 flex justify-center">
+        <Loader />
+      </div>
     );
   if (error)
     return (
-      <p className="text-center text-red-500 py-4">
-        Error loading transfers: {error.message}
-      </p>
-    );
-  if (transfers.length === 0)
-    return (
-      <p className="text-center text-gray-600 py-4">
-        No transfers are awaiting delivery.
-      </p>
+      <div className="p-8 text-center text-red-500">Failed to load data.</div>
     );
 
   return (
-    <div className="container mx-auto mt-8">
-      <h2 className="text-xl sm:text-2xl font-semibold text-gray-800 mb-4">
-        Awaiting Delivery
-      </h2>
-      <div className="overflow-x-auto shadow-md rounded-lg">
-        <table className="min-w-full bg-white border-collapse">
-          <thead className="bg-gray-200">
-            <tr>
-              {[
-                "ID",
-                "Release Date",
-                "From",
-                "To",
-                "Items",
-                "Status",
-                "Released By",
-                "Product Details",
-                "Actions",
-              ].map((header) => (
-                <th
-                  key={header}
-                  className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider"
-                >
-                  {header}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {transfers.map((transfer) => (
-              <tr key={transfer.id} className="hover:bg-gray-100">
-                <td className="py-3 px-4">{transfer.id}</td>
-                <td className="py-3 px-4">
-                  {formatDate(transfer.transferredDate)}
-                </td>
-                <td className="py-3 px-4">{transfer.fromLocation}</td>
-                <td className="py-3 px-4">{transfer.toLocation}</td>
-                <td className="py-3 px-4">{transfer.items.length}</td>
-                <td className="py-3 px-4">{transfer.status}</td>
-                <td className="py-3 px-4">{transfer.releaseBy}</td>
-                <td className="py-3 px-4">
-                  {transfer.items?.length > 0 ? (
-                    <ul className="list-disc list-inside text-sm text-gray-600">
-                      {transfer.items.map((item, index) => (
-                        <li key={item.id || index} className="mb-1">
-                          <strong>
-                            {item.pricelist?.product?.productName || "N/A"}
-                          </strong>
-                          {item.pricelist?.color?.colorName &&
-                            ` (${item.pricelist.color.colorName})`}
-                          <br />
-                          Qty: {item.quantity} | SNs:{" "}
-                          {item.pricelist?.serialNumbers?.length > 0
-                            ? item.pricelist.serialNumbers
-                                .map((sn) => sn.serialName)
-                                .join(", ")
-                            : "No Serial"}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-sm text-gray-600 italic">
-                      No items in transfer.
-                    </p>
-                  )}
-                </td>
-                <td className="py-3 px-4">
-                  <button
-                    onClick={() => handleRevert(transfer.id)}
-                    className="bg-red-500 hover:bg-red-600 text-white text-sm font-medium px-3 py-1 rounded mr-2"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => openReceiveModal(transfer)}
-                    className="bg-green-500 hover:bg-green-600 text-white text-sm font-medium px-3 py-1 rounded"
-                  >
-                    Receive
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <div className="w-full">
+      {/* Sub-Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+        <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+          In Transit
+          <span className="bg-indigo-100 text-indigo-700 text-xs px-2 py-0.5 rounded-full">
+            {filteredTransfers.length}
+          </span>
+        </h2>
+
+        {/* Minimal Search */}
+        <div className="relative w-full md:w-64">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <FaSearch className="text-gray-400 text-xs" />
+          </div>
+          <input
+            type="text"
+            placeholder="Search..."
+            value={searchQuery}
+            onChange={handleSearchChange}
+            className="w-full pl-9 pr-4 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-shadow bg-white"
+          />
+        </div>
       </div>
 
-      {isModalOpen && (
+      {filteredTransfers.length === 0 ? (
+        <div className="text-center py-12 bg-gray-50 rounded-lg border border-gray-200">
+          <p className="text-gray-500 text-sm">No transfers found.</p>
+        </div>
+      ) : (
+        <>
+          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200 text-xs uppercase text-gray-500 font-semibold">
+                  <th className="px-6 py-3">Reference</th>
+                  <th className="px-6 py-3">Route</th>
+                  <th className="px-6 py-3 text-center">Items</th>
+                  <th className="px-6 py-3 text-center">Status</th>
+                  <th className="px-6 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {currentTransfers.map((t) => (
+                  <tr key={t.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4">
+                      <span className="block text-sm font-medium text-gray-900">
+                        #{t.id}
+                      </span>
+                      <span className="block text-xs text-gray-500 mt-0.5">
+                        {formatDate(t.transferredDate)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col text-sm">
+                        <span className="text-gray-500 text-xs">
+                          From:{" "}
+                          <span className="text-gray-700 font-medium">
+                            {t.fromLocationName}
+                          </span>
+                        </span>
+                        <span className="text-gray-500 text-xs mt-1">
+                          To:{" "}
+                          <span className="text-gray-900 font-bold">
+                            {t.toLocationName}
+                          </span>
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <button
+                        onClick={() => openViewItemsModal(t)}
+                        className="text-xs font-medium text-indigo-600 hover:text-indigo-800 underline underline-offset-2"
+                      >
+                        View {t.itemsCount} Items
+                      </button>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <span className="inline-block px-2 py-1 rounded-md text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                        In Transit
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex justify-end items-center gap-3">
+                        <button
+                          onClick={() => handleRevert(t.id)}
+                          className="text-xs text-gray-500 hover:text-red-600 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => openReceiveModal(t)}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-3 py-1.5 rounded transition-colors"
+                        >
+                          Receive Items
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {filteredTransfers.length > itemsPerPage && (
+            <div className="mt-4">
+              <Pagination
+                itemsPerPage={itemsPerPage}
+                totalItems={filteredTransfers.length}
+                currentPage={currentPage}
+                paginate={paginate}
+              />
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Modals */}
+      <ViewManifestModal
+        isOpen={viewItemsModalOpen}
+        onClose={() => setViewItemsModalOpen(false)}
+        items={selectedTransfer?.items || []}
+        transferId={selectedTransfer?.id}
+      />
+      {receiveModalOpen && selectedTransfer && (
         <ReceivedItemModal
           transfer={selectedTransfer}
-          onClose={closeReceiveModal}
+          onClose={() => setReceiveModalOpen(false)}
           onConfirmReceive={handleConfirmReceive}
         />
       )}
