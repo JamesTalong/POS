@@ -30,6 +30,7 @@ const SYSTEM_STATUSES = [
   "RETURNED_GOOD",
   "GOOD",
   "MISSING",
+  "TRANSFERRED",
 ];
 
 const isSystemData = (name) => {

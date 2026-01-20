@@ -52,6 +52,7 @@ import SalesQuotations from "./components/Admin/SalesQuotations/SalesQuotations"
 import SalesOrders from "./components/Admin/SalesOrders/SalesOrders";
 import DeliveryOrders from "./components/Admin/DeliveryOrders/DeliveryOrders";
 import InventoryOverride from "./components/Admin/InventoryOverride/InventoryOverride";
+import Approvers from "./components/Admin/Approvers/Approvers";
 
 const App = () => {
   const router = createBrowserRouter(
@@ -67,6 +68,7 @@ const App = () => {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="users" element={<UsersComponent />} />
           <Route path="employees" element={<Employees />} />
+          <Route path="approvers" element={<Approvers />} />
           <Route path="InventoryStatus" element={<InventoryStatus />} />
           <Route path="SalesOrders" element={<SalesOrders />} />
           <Route

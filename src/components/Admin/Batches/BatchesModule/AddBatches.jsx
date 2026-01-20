@@ -22,7 +22,7 @@ import { FiChevronDown, FiSearch } from "react-icons/fi";
 import { domain } from "../../../../security";
 import SearchableDropdown from "../../../../UI/common/SearchableDropdown";
 
-// --- SUB-COMPONENT: Product Selector (Existing) ---
+// --- SUB-COMPONENT: Product Selector (No Changes) ---
 const ProductSelector = ({
   options,
   value,
@@ -195,7 +195,7 @@ const ProductSelector = ({
   );
 };
 
-// --- SUB-COMPONENT: Serial Reduction Modal ---
+// --- SUB-COMPONENT: Serial Reduction Modal (No Changes) ---
 const SerialReductionModal = ({
   isOpen,
   onClose,
@@ -216,7 +216,6 @@ const SerialReductionModal = ({
       if (prev.includes(index)) {
         return prev.filter((i) => i !== index);
       } else {
-        // Prevent selecting more than needed
         if (prev.length < quantityToRemove) {
           return [...prev, index];
         }
@@ -227,13 +226,12 @@ const SerialReductionModal = ({
 
   const handleConfirm = () => {
     onConfirm(selectedIndices);
-    setSelectedIndices([]); // Reset for next time
+    setSelectedIndices([]);
   };
 
   return createPortal(
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
-        {/* Header */}
         <div className="bg-red-50 p-6 border-b border-red-100 flex items-start gap-4">
           <div className="p-3 bg-red-100 rounded-full">
             <AlertTriangle className="w-6 h-6 text-red-600" />
@@ -256,7 +254,6 @@ const SerialReductionModal = ({
           </div>
         </div>
 
-        {/* Body - List of Serials */}
         <div className="p-6 max-h-[300px] overflow-y-auto bg-gray-50 border-y border-gray-100">
           <h4 className="text-xs font-semibold uppercase text-gray-500 mb-3 tracking-wider">
             Select items to delete ({remainingToRemove} remaining)
@@ -305,7 +302,6 @@ const SerialReductionModal = ({
           </div>
         </div>
 
-        {/* Footer */}
         <div className="p-4 bg-white flex justify-end gap-3">
           <button
             onClick={onClose}
@@ -337,7 +333,6 @@ const SerialReductionModal = ({
 // --- MAIN COMPONENT ---
 
 const AddBatches = ({ onClose, refreshData, batchToEdit }) => {
-  // State aligned with Controller DTO
   const [formData, setFormData] = useState({
     name: "",
     batchDate: new Date(),
@@ -369,7 +364,6 @@ const AddBatches = ({ onClose, refreshData, batchToEdit }) => {
         locationId: batchToEdit.locationId,
         inventoryStatusId: batchToEdit.inventoryStatusId,
         hasSerial: batchToEdit.hasSerial || false,
-        // Deep copy needed so we don't mutate reference
         serialNumbers:
           batchToEdit.serialNumbers?.map((s) => ({
             serialName: s.serialName,
@@ -405,11 +399,8 @@ const AddBatches = ({ onClose, refreshData, batchToEdit }) => {
   }, []);
 
   // --- Form Handlers ---
-
   const handleProductSelect = useCallback((selectedProduct) => {
     if (!selectedProduct) return;
-
-    // Reset quantity and serials when product changes
     setFormData((prev) => ({
       ...prev,
       productId: selectedProduct.id,
@@ -419,12 +410,10 @@ const AddBatches = ({ onClose, refreshData, batchToEdit }) => {
     }));
   }, []);
 
-  // Logic to handle Quantity Input
   const handleQuantityChange = (e) => {
     const newQty = parseInt(e.target.value, 10) || 0;
     const currentQty = formData.quantity || 0;
 
-    // 1. If increasing: Standard behavior
     if (newQty > currentQty) {
       const addedCount = newQty - formData.serialNumbers.length;
       let updatedSerials = [...formData.serialNumbers];
@@ -445,16 +434,11 @@ const AddBatches = ({ onClose, refreshData, batchToEdit }) => {
       return;
     }
 
-    // 2. If decreasing: Check if Serialized
     if (newQty < currentQty) {
       if (formData.hasSerial) {
-        // Warning Logic: Don't update form yet. Open Modal.
         setReductionTargetQty(newQty);
         setReductionModalOpen(true);
-        // We do NOT call setFormData here. The input will visually remain at old value
-        // until confirmed, or if canceled it just stays there.
       } else {
-        // Non-serialized: Just slice the array automatically
         const updatedSerials = formData.serialNumbers.slice(0, newQty);
         setFormData({
           ...formData,
@@ -465,7 +449,6 @@ const AddBatches = ({ onClose, refreshData, batchToEdit }) => {
     }
   };
 
-  // Called when user confirms deletion in Modal
   const handleConfirmReduction = (indicesToRemove) => {
     const updatedSerials = formData.serialNumbers.filter(
       (_, index) => !indicesToRemove.includes(index)
@@ -482,7 +465,6 @@ const AddBatches = ({ onClose, refreshData, batchToEdit }) => {
 
   const handleCloseReductionModal = () => {
     setReductionModalOpen(false);
-    // No state change needed; formData.quantity is still the old valid value.
     toast.info("Quantity change cancelled.");
   };
 
@@ -500,7 +482,6 @@ const AddBatches = ({ onClose, refreshData, batchToEdit }) => {
     e.preventDefault();
     if (isLoading) return;
 
-    // Basic Validation
     if (!formData.name) return toast.warning("Batch Name is required.");
     if (!formData.productId) return toast.warning("Product is required.");
     if (!formData.locationId) return toast.warning("Location is required.");
@@ -509,7 +490,6 @@ const AddBatches = ({ onClose, refreshData, batchToEdit }) => {
     if (formData.quantity <= 0)
       return toast.warning("Quantity must be greater than 0.");
 
-    // Serial Validation
     if (formData.hasSerial) {
       if (formData.serialNumbers.length !== formData.quantity) {
         return toast.error("Number of serials must match quantity.");
@@ -519,7 +499,6 @@ const AddBatches = ({ onClose, refreshData, batchToEdit }) => {
       );
       if (hasEmpty) return toast.error("All serial numbers must be filled.");
 
-      // Duplicate check
       const names = formData.serialNumbers.map((s) =>
         s.serialName.trim().toUpperCase()
       );
@@ -539,9 +518,10 @@ const AddBatches = ({ onClose, refreshData, batchToEdit }) => {
       quantity: formData.quantity,
       hasSerial: formData.hasSerial,
       batchDate: formData.batchDate.toISOString(),
-      // Controller Logic:
-      // If HasSerial = True, send the list.
-      // If HasSerial = False, send empty array (Controller loops quantity to create empty rows).
+
+      // FIXED: Must send null explicitly if using manual entry, not undefined/0
+      goodsReceiptLineId: null,
+
       serialNumbers: formData.hasSerial
         ? formData.serialNumbers.map((s) => ({
             serialName: s.serialName.toUpperCase(),
@@ -551,6 +531,7 @@ const AddBatches = ({ onClose, refreshData, batchToEdit }) => {
     };
 
     try {
+      console.log("Submitting payload:", payload);
       if (batchToEdit) {
         await axios.put(`${domain}/api/Batches/${batchToEdit.id}`, payload);
         toast.success("Batch updated successfully");
@@ -562,7 +543,8 @@ const AddBatches = ({ onClose, refreshData, batchToEdit }) => {
       onClose();
     } catch (error) {
       console.error("Submission error:", error);
-      toast.error(error.response?.data?.message || "Failed to save batch.");
+      const msg = error.response?.data?.message || "Failed to save batch.";
+      toast.error(msg);
     } finally {
       setIsLoading(false);
     }
@@ -572,7 +554,6 @@ const AddBatches = ({ onClose, refreshData, batchToEdit }) => {
     <div className="flex flex-col h-full bg-white rounded-lg relative">
       {isLoading && <Loader />}
 
-      {/* Reduction Warning Modal */}
       <SerialReductionModal
         isOpen={isReductionModalOpen}
         onClose={handleCloseReductionModal}
@@ -581,7 +562,6 @@ const AddBatches = ({ onClose, refreshData, batchToEdit }) => {
         targetQuantity={reductionTargetQty}
       />
 
-      {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
         <div>
           <h2 className="text-xl font-bold text-gray-800">
@@ -599,7 +579,6 @@ const AddBatches = ({ onClose, refreshData, batchToEdit }) => {
         </button>
       </div>
 
-      {/* Scrollable Form Area */}
       <div className="flex-1 overflow-y-auto p-6">
         <form id="batchForm" onSubmit={handleSubmit} className="space-y-6">
           {/* Row 1: Batch Name & Date */}
@@ -650,7 +629,7 @@ const AddBatches = ({ onClose, refreshData, batchToEdit }) => {
               value={formData.productId}
               onChange={handleProductSelect}
               placeholder="Select product (Search by Name, Code, Barcode)"
-              disabled={!!batchToEdit} // Optional: Lock product on edit if backend doesn't support changing product easily
+              disabled={!!batchToEdit}
             />
           </div>
 
@@ -766,8 +745,10 @@ const AddBatches = ({ onClose, refreshData, batchToEdit }) => {
         >
           Cancel
         </button>
+        {/* FIXED: Removed onClick={handleSubmit} to prevent double-submit bug, added type="submit" */}
         <button
-          onClick={handleSubmit}
+          type="submit"
+          form="batchForm"
           className="px-5 py-2.5 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-sm transition flex items-center gap-2"
         >
           {batchToEdit ? "Update Batch" : "Save Batch"}

@@ -1,147 +1,35 @@
 import React, { useState } from "react";
-// -----------------------------------------------------------------
-// IMPORT: Using 'xlsx-js-style' for colors and formatting
 import XLSX from "xlsx-js-style";
-// -----------------------------------------------------------------
 import {
   Package,
   MapPin,
   Tag,
   Eye,
-  X,
-  Search,
-  CheckCircle,
-  AlertCircle,
-  ShoppingCart,
-  QrCode,
   Download,
+  Upload,
+  AlertTriangle,
+  CheckCircle2,
+  PlusCircle, // Imported PlusCircle
 } from "lucide-react";
 import { toast } from "react-toastify";
+import UploadOverrideModal from "./UploadOverrideModal";
+import SerialNumberModal from "./SerialNumberModal";
+import NewItemsBulkModal from "./NewItemsModal"; // Imported NewItemsBulkModal
 
-// --- Serial Number Modal Component (No changes) ---
-const SerialNumberModal = ({ isOpen, onClose, item }) => {
-  const [activeTab, setActiveTab] = useState("unsold");
-  const [searchTerm, setSearchTerm] = useState("");
-
-  if (!isOpen || !item) return null;
-
-  const getList = () => {
-    let list = [];
-    if (activeTab === "unsold") list = item.unsoldSerials || [];
-    if (activeTab === "sold") list = item.soldSerials || [];
-    if (activeTab === "bad") list = item.badSerials || [];
-
-    return list.filter((s) =>
-      s.serialName.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  };
-
-  const currentList = getList();
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
-        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-          <div>
-            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-              <QrCode className="text-indigo-600" size={20} />
-              Serial Numbers
-            </h3>
-            <p className="text-sm text-slate-500">
-              {item.productName} ({item.itemCode})
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-500"
-          >
-            <X size={20} />
-          </button>
-        </div>
-        <div className="p-4 bg-white border-b border-slate-100 space-y-4">
-          <div className="flex p-1 bg-slate-100 rounded-lg">
-            <button
-              onClick={() => setActiveTab("unsold")}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 text-sm font-medium rounded-md transition-all ${
-                activeTab === "unsold"
-                  ? "bg-white text-teal-700 shadow-sm"
-                  : "text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              <CheckCircle size={14} /> Good ({item.unsoldSerials?.length || 0})
-            </button>
-            <button
-              onClick={() => setActiveTab("sold")}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 text-sm font-medium rounded-md transition-all ${
-                activeTab === "sold"
-                  ? "bg-white text-indigo-700 shadow-sm"
-                  : "text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              <ShoppingCart size={14} /> Sold ({item.soldSerials?.length || 0})
-            </button>
-            <button
-              onClick={() => setActiveTab("bad")}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 text-sm font-medium rounded-md transition-all ${
-                activeTab === "bad"
-                  ? "bg-white text-orange-700 shadow-sm"
-                  : "text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              <AlertCircle size={14} /> Bad ({item.badSerials?.length || 0})
-            </button>
-          </div>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search serial number..."
-              className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-        </div>
-        <div className="flex-1 overflow-y-auto p-4 bg-slate-50">
-          {currentList.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {currentList.map((serial) => (
-                <div
-                  key={serial.id}
-                  className="bg-white px-3 py-2.5 rounded border border-slate-200 text-sm font-mono text-slate-700 hover:border-indigo-300 transition-colors shadow-sm flex items-center justify-between"
-                >
-                  <span>{serial.serialName}</span>
-                  <span className="text-[10px] text-slate-400">
-                    #{serial.id}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-40 text-slate-400">
-              <Search size={32} className="mb-2 opacity-50" />
-              <p>No serial numbers found.</p>
-            </div>
-          )}
-        </div>
-        <div className="p-4 border-t border-slate-200 bg-white flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-slate-100 text-slate-700 font-medium rounded-lg hover:bg-slate-200 transition-colors"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// --- Main Table Component ---
-// UPDATED: Added 'allData' to props
-const InventoryOverrideTable = ({ data, allData }) => {
+const InventoryOverrideTable = ({ data, allData, serialFilter, onRefresh }) => {
   const [selectedItem, setSelectedItem] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [isNewItemsModalOpen, setIsNewItemsModalOpen] = useState(false); // New State
+  const [isWarningModalOpen, setIsWarningModalOpen] = useState(false);
+
+  // Logic to determine location ID for new items
+  const currentLocationId =
+    data && data.length > 0
+      ? data[0].locationId
+      : allData && allData.length > 0
+      ? allData[0].locationId
+      : null;
 
   const openSerialModal = (item) => {
     setSelectedItem(item);
@@ -153,44 +41,51 @@ const InventoryOverrideTable = ({ data, allData }) => {
     setSelectedItem(null);
   };
 
-  // --- EXPORT TO EXCEL FUNCTION ---
-  const handleDownloadExcel = () => {
-    // UPDATED: Use allData (full filtered list) if available, otherwise fallback to data (current page)
-    const dataToExport = allData && allData.length > 0 ? allData : data;
+  const handleDownloadClick = () => {
+    setIsWarningModalOpen(true);
+  };
 
+  // --- FULL EXCEL LOGIC ---
+  const proceedWithDownload = () => {
+    const dataToExport = allData && allData.length > 0 ? allData : data;
     if (!dataToExport || dataToExport.length === 0) {
       toast.error("No data available to export.");
       return;
     }
-
     try {
-      // 1. Prepare Data
-      const exportData = dataToExport.map((item) => ({
-        "Product Name": item.productName,
-        "Item Code": item.itemCode,
-        Location: item.locationName,
-        UOM: item.uomName,
-        "Total Stock": item.totalCount,
+      // 1. Map Data
+      const exportData = dataToExport.map((item) => {
+        const row = {
+          SYS_PID: item.productId,
+          SYS_LID: item.locationId,
+          "Item Code": item.itemCode,
+          "Product Name": item.productName,
+          Location: item.locationName,
+          UOM: item.uomName,
+          "Serialized?": item.hasSerial ? "Yes" : "No",
+        };
 
-        // Serial Number Lists in the middle
-        "Good Serial Numbers":
-          item.unsoldSerials?.map((s) => s.serialName).join(", ") || "",
-        "Sold Serial Numbers":
-          item.soldSerials?.map((s) => s.serialName).join(", ") || "",
-        "Bad Serial Numbers":
-          item.badSerials?.map((s) => s.serialName).join(", ") || "",
+        row["Good Qty"] = item.unsoldCount;
+        if (serialFilter !== "Non-Serialized") {
+          row["Good Serials"] =
+            item.unsoldSerials?.map((s) => s.serialName).join(", ") || "";
+        }
+        row["Sold Qty"] = item.soldCount;
+        if (serialFilter !== "Non-Serialized") {
+          row["Sold Serials"] =
+            item.soldSerials?.map((s) => s.serialName).join(", ") || "";
+        }
+        row["Bad Qty"] = item.badStock;
+        if (serialFilter !== "Non-Serialized") {
+          row["Bad Serials"] =
+            item.badSerials?.map((s) => s.serialName).join(", ") || "";
+        }
+        return row;
+      });
 
-        // Metrics at the END (Right side)
-        "Serialized?": item.hasSerial ? "Yes" : "No",
-        "Good Stock": item.unsoldCount, // Green Header
-        "Sold Count": item.soldCount, // Blue Header
-        "Bad Stock": item.badStock, // Red Header
-      }));
-
-      // 2. Create Worksheet
       const ws = XLSX.utils.json_to_sheet(exportData);
 
-      // 3. Define Styles
+      // 2. Define Styles
       const baseHeaderStyle = {
         font: { bold: true, color: { rgb: "FFFFFF" } },
         alignment: { horizontal: "center", vertical: "center", wrapText: true },
@@ -202,23 +97,22 @@ const InventoryOverrideTable = ({ data, allData }) => {
         },
       };
 
-      // Header Colors
-      const defaultHeader = {
+      const systemHeader = {
         ...baseHeaderStyle,
-        fill: { fgColor: { rgb: "4F46E5" } },
-      }; // Indigo
+        fill: { fgColor: { rgb: "4F46E5" } }, // Indigo
+      };
       const goodHeader = {
         ...baseHeaderStyle,
-        fill: { fgColor: { rgb: "10B981" } },
-      }; // Green
+        fill: { fgColor: { rgb: "10B981" } }, // Emerald
+      };
       const soldHeader = {
         ...baseHeaderStyle,
-        fill: { fgColor: { rgb: "3B82F6" } },
-      }; // Blue
+        fill: { fgColor: { rgb: "3B82F6" } }, // Blue
+      };
       const badHeader = {
         ...baseHeaderStyle,
-        fill: { fgColor: { rgb: "EF4444" } },
-      }; // Red
+        fill: { fgColor: { rgb: "EF4444" } }, // Red
+      };
 
       const cellStyle = {
         alignment: { horizontal: "center", vertical: "center", wrapText: true },
@@ -230,136 +124,115 @@ const InventoryOverrideTable = ({ data, allData }) => {
         },
       };
 
-      // 4. AutoFit Columns
-      const colWidths = Object.keys(exportData[0]).map((key) => {
-        let maxLen = key.length;
-        exportData.slice(0, 50).forEach((row) => {
-          const val = String(row[key] || "");
-          if (val.length > maxLen) maxLen = val.length;
-        });
-        // Cap width to prevent massive serial columns
-        return { wch: Math.min(maxLen + 2, 60) };
+      // 3. Set Column Widths
+      ws["!cols"] = Object.keys(exportData[0]).map((key) => {
+        if (key.includes("SYS_")) return { wch: 10 };
+        if (key.includes("Name") || key.includes("Serials")) return { wch: 30 };
+        return { wch: 15 };
       });
-      ws["!cols"] = colWidths;
 
-      // 5. Apply Styles
+      // 4. Apply Styles to Cells
       const range = XLSX.utils.decode_range(ws["!ref"]);
-
       for (let R = range.s.r; R <= range.e.r; ++R) {
         for (let C = range.s.c; C <= range.e.c; ++C) {
           const address = XLSX.utils.encode_cell({ r: R, c: C });
           if (!ws[address]) continue;
 
           if (R === 0) {
-            // Header Row Logic
-            const cellValue = ws[address].v;
-
-            if (cellValue === "Good Stock") {
-              ws[address].s = goodHeader;
-            } else if (cellValue === "Sold Count") {
-              ws[address].s = soldHeader;
-            } else if (cellValue === "Bad Stock") {
-              ws[address].s = badHeader;
-            } else {
-              ws[address].s = defaultHeader;
-            }
+            // Header Row Styling
+            const val = ws[address].v;
+            if (val.includes("Good")) ws[address].s = goodHeader;
+            else if (val.includes("Sold")) ws[address].s = soldHeader;
+            else if (val.includes("Bad")) ws[address].s = badHeader;
+            else ws[address].s = systemHeader;
           } else {
-            // Body Rows
+            // Data Row Styling
             ws[address].s = cellStyle;
           }
         }
       }
 
-      // 6. Generate
+      // 5. Create Book and Export
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Inventory Report");
-      const dateStr = new Date().toISOString().split("T")[0];
-      XLSX.writeFile(wb, `Physical_Inventory_Base_${dateStr}.xlsx`);
-
+      XLSX.writeFile(
+        wb,
+        `Physical_Inventory_${new Date().toISOString().split("T")[0]}.xlsx`
+      );
       toast.success("Excel downloaded successfully!");
+      setIsWarningModalOpen(false);
     } catch (error) {
-      console.error("Export Error:", error);
+      console.error(error);
       toast.error("Failed to export data.");
     }
   };
 
+  // --- HANDLER FOR NEW ITEMS CLICK ---
+  const handleNewItemsClick = () => {
+    if (!currentLocationId) {
+      toast.error(
+        "Could not determine Location ID. Please ensure data is loaded for this location."
+      );
+      return;
+    }
+    setIsNewItemsModalOpen(true);
+  };
+
+  // --- RENDERING ---
+
+  // Handle Empty State but keep buttons accessible
   if (!data || data.length === 0) {
     return (
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
-        <Package className="mx-auto h-12 w-12 text-slate-300 mb-4" />
-        <h3 className="text-lg font-medium text-slate-900">
-          No Inventory Found
-        </h3>
-        <p className="text-slate-500 mt-2">
-          Try adjusting your search or location filters.
-        </p>
-      </div>
-    );
-  }
+      <>
+        <UploadOverrideModal
+          isOpen={isUploadOpen}
+          onClose={() => setIsUploadOpen(false)}
+          onUploadSuccess={() => {
+            setIsUploadOpen(false);
+            if (onRefresh) onRefresh();
+          }}
+        />
 
-  const InventoryCard = ({ item }) => (
-    <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 mb-4 relative overflow-hidden">
-      <div className="flex justify-between items-start mb-3">
-        <div>
-          <h3 className="font-bold text-slate-800 text-lg leading-tight">
-            {item.productName}
+        {/* NEW MODAL (Only renders if location is known) */}
+        {currentLocationId && (
+          <NewItemsBulkModal
+            isOpen={isNewItemsModalOpen}
+            onClose={() => setIsNewItemsModalOpen(false)}
+            locationId={currentLocationId}
+            refreshData={onRefresh}
+          />
+        )}
+
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
+          <Package className="mx-auto h-12 w-12 text-slate-300 mb-4" />
+          <h3 className="text-lg font-medium text-slate-900">
+            No Inventory Found
           </h3>
-          <div className="flex items-center gap-2 mt-1">
-            <span className="text-xs font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200">
-              {item.itemCode}
-            </span>
-            {item.hasSerial && (
-              <span className="text-[10px] font-bold bg-purple-50 text-purple-600 px-2 py-0.5 rounded border border-purple-100 uppercase tracking-wide flex items-center gap-1">
-                <QrCode size={10} /> Serialized
-              </span>
-            )}
+
+          <div className="flex justify-center gap-3 mt-4">
+            {/* Added New Items Button here as well */}
+
+            <button
+              onClick={handleNewItemsClick}
+              disabled={!currentLocationId}
+              className={`flex items-center gap-2 bg-indigo-900 hover:bg-indigo-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                !currentLocationId ? "opacity-50 cursor-not-allowed" : ""
+              }`}
+            >
+              <PlusCircle size={16} /> New Items
+            </button>
+
+            <button
+              onClick={() => setIsUploadOpen(true)}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all"
+            >
+              <Upload size={16} /> Upload Adjustments
+            </button>
           </div>
         </div>
-        <div className="flex items-center gap-1 text-xs font-medium bg-slate-100 text-slate-600 px-2 py-1 rounded-md">
-          <MapPin size={12} />
-          {item.locationName}
-        </div>
-      </div>
-
-      <div className="flex justify-between items-center bg-indigo-50/50 p-3 rounded-lg border border-indigo-100 mb-3">
-        <div>
-          <span className="text-xs text-indigo-500 font-bold uppercase block">
-            Total Stock
-          </span>
-          <span className="text-2xl font-bold text-indigo-700">
-            {item.totalCount}
-          </span>
-          <span className="text-xs text-indigo-400 ml-1">{item.uomName}</span>
-        </div>
-
-        {item.hasSerial && (
-          <button
-            onClick={() => openSerialModal(item)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-indigo-200 text-indigo-600 text-xs font-bold rounded-md hover:bg-indigo-50 shadow-sm"
-          >
-            <Eye size={14} /> View Serials
-          </button>
-        )}
-      </div>
-
-      <div className="grid grid-cols-3 gap-2 text-center text-xs">
-        <div className="p-2 rounded bg-slate-50 border border-slate-100">
-          <p className="text-slate-400 mb-0.5">Good</p>
-          <p className="font-bold text-teal-600 text-base">
-            {item.unsoldCount}
-          </p>
-        </div>
-        <div className="p-2 rounded bg-slate-50 border border-slate-100">
-          <p className="text-slate-400 mb-0.5">Sold</p>
-          <p className="font-bold text-slate-600 text-base">{item.soldCount}</p>
-        </div>
-        <div className="p-2 rounded bg-slate-50 border border-slate-100">
-          <p className="text-slate-400 mb-0.5">Bad</p>
-          <p className="font-bold text-orange-600 text-base">{item.badStock}</p>
-        </div>
-      </div>
-    </div>
-  );
+      </>
+    );
+  }
 
   return (
     <>
@@ -369,22 +242,156 @@ const InventoryOverrideTable = ({ data, allData }) => {
         item={selectedItem}
       />
 
-      <div className="flex justify-end mb-4">
+      <UploadOverrideModal
+        isOpen={isUploadOpen}
+        onClose={() => setIsUploadOpen(false)}
+        onUploadSuccess={() => {
+          setIsUploadOpen(false);
+          if (onRefresh) onRefresh();
+        }}
+      />
+
+      {/* NEW MODAL COMPONENT */}
+      {currentLocationId && (
+        <NewItemsBulkModal
+          isOpen={isNewItemsModalOpen}
+          onClose={() => setIsNewItemsModalOpen(false)}
+          locationId={currentLocationId}
+          refreshData={onRefresh}
+        />
+      )}
+
+      {/* Warning Modal (Filled with content from reference) */}
+      {isWarningModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="bg-amber-50 border-b border-amber-100 p-6 flex items-start gap-4">
+              <div className="p-3 bg-amber-100 rounded-full shrink-0">
+                <AlertTriangle className="w-6 h-6 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">
+                  Excel Editing Guide
+                </h3>
+                <p className="text-slate-600 text-sm mt-1">
+                  The file is organized for easier editing. Please follow the
+                  rules below.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-lg text-center">
+                  <span className="block text-xs font-bold text-indigo-400 uppercase tracking-wider mb-1">
+                    Left Side
+                  </span>
+                  <div className="text-indigo-800 font-bold text-sm">
+                    Violet Columns
+                  </div>
+                  <div className="text-xs text-indigo-600 mt-1">
+                    System Info & IDs
+                  </div>
+                  <div className="mt-2 text-[10px] bg-white border border-indigo-200 text-indigo-700 py-1 px-2 rounded-full inline-block">
+                    DO NOT EDIT
+                  </div>
+                </div>
+
+                <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-lg text-center">
+                  <span className="block text-xs font-bold text-emerald-400 uppercase tracking-wider mb-1">
+                    Right Side
+                  </span>
+                  <div className="text-emerald-800 font-bold text-sm">
+                    Colored Columns
+                  </div>
+                  <div className="text-xs text-emerald-600 mt-1">
+                    Counts & Serials
+                  </div>
+                  <div className="mt-2 text-[10px] bg-white border border-emerald-200 text-emerald-700 py-1 px-2 rounded-full inline-block">
+                    EDIT THESE
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">
+                  Rules
+                </h4>
+
+                <div className="flex items-start gap-3 p-3 rounded-lg border border-slate-100 bg-white shadow-sm">
+                  <div className="mt-0.5">
+                    <Tag size={16} className="text-purple-600" />
+                  </div>
+                  <div className="text-sm">
+                    <span className="font-bold text-slate-800 block">
+                      If Serialized (Yes):
+                    </span>
+                    <span className="text-slate-500">
+                      Edit the <strong>Serial Number columns</strong> (comma
+                      separated). <br />
+                      <span className="text-xs italic text-slate-400">
+                        Example: SN001, SN002, SN003
+                      </span>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 p-3 rounded-lg border border-slate-100 bg-white shadow-sm">
+                  <div className="mt-0.5">
+                    <Package size={16} className="text-slate-600" />
+                  </div>
+                  <div className="text-sm">
+                    <span className="font-bold text-slate-800 block">
+                      If Non-Serialized (No):
+                    </span>
+                    <span className="text-slate-500">
+                      Ignore serial columns. Edit the{" "}
+                      <strong>Qty/Count columns</strong> directly.
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+              <button
+                onClick={() => setIsWarningModalOpen(false)}
+                className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={proceedWithDownload}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-all active:scale-95"
+              >
+                <CheckCircle2 size={16} />I Understand & Download
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex justify-end gap-3 mb-4">
+        {/* --- NEW ITEMS BUTTON --- */}
         <button
-          onClick={handleDownloadExcel}
-          className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg shadow-sm transition-all font-medium text-sm"
+          onClick={handleNewItemsClick}
+          className="flex items-center gap-2 bg-indigo-900 hover:bg-indigo-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all"
+        >
+          <PlusCircle size={16} /> New Items
+        </button>
+
+        <button
+          onClick={() => setIsUploadOpen(true)}
+          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all"
+        >
+          <Upload size={16} /> Upload Adjustments
+        </button>
+        <button
+          onClick={handleDownloadClick}
+          className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all"
         >
           <Download size={16} /> Download Excel
         </button>
-      </div>
-
-      <div className="md:hidden">
-        {data.map((item) => (
-          <InventoryCard
-            key={`${item.productId}-${item.locationId}`}
-            item={item}
-          />
-        ))}
       </div>
 
       <div className="hidden md:block bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -426,54 +433,36 @@ const InventoryOverrideTable = ({ data, allData }) => {
                     </div>
                   </div>
                 </td>
-
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-1.5 text-slate-600 font-medium">
-                    <MapPin size={14} className="text-slate-400" />
+                    <MapPin size={14} className="text-slate-400" />{" "}
                     {item.locationName}
                   </div>
                 </td>
-
                 <td className="px-6 py-4 text-center">
-                  <span className="px-2.5 py-1 rounded-md bg-white text-slate-600 text-xs font-medium border border-slate-200 shadow-sm">
+                  <span className="px-2.5 py-1 rounded-md bg-white text-slate-600 text-xs font-medium border border-slate-200">
                     {item.uomName}
                   </span>
                 </td>
-
                 <td className="px-6 py-4 text-center bg-indigo-50/20">
-                  <span className="text-lg font-bold text-indigo-700 block">
+                  <span className="text-lg font-bold text-indigo-700">
                     {item.totalCount}
                   </span>
                 </td>
-
-                <td className="px-6 py-4 text-center">
-                  <span className="font-medium text-teal-600">
-                    {item.unsoldCount}
-                  </span>
+                <td className="px-6 py-4 text-center text-teal-600 font-medium">
+                  {item.unsoldCount}
                 </td>
-
-                <td className="px-6 py-4 text-center">
-                  <span className="font-medium text-slate-500">
-                    {item.soldCount}
-                  </span>
+                <td className="px-6 py-4 text-center text-slate-500 font-medium">
+                  {item.soldCount}
                 </td>
-
-                <td className="px-6 py-4 text-center">
-                  <span
-                    className={`font-medium ${
-                      item.badStock > 0 ? "text-orange-600" : "text-slate-300"
-                    }`}
-                  >
-                    {item.badStock}
-                  </span>
+                <td className="px-6 py-4 text-center text-orange-600 font-medium">
+                  {item.badStock}
                 </td>
-
                 <td className="px-6 py-4 text-center">
                   {item.hasSerial ? (
                     <button
                       onClick={() => openSerialModal(item)}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded transition-all"
-                      title="View Serial Numbers"
                     >
                       <Eye size={14} /> View
                     </button>

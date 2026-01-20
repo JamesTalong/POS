@@ -18,6 +18,13 @@ import {
   ShieldAlert,
   Eye,
   Printer,
+  Archive,
+  Clock,
+  MapPin,
+  Calendar,
+  User,
+  CreditCard,
+  Info,
 } from "lucide-react";
 
 import Loader from "../../../loader/Loader";
@@ -28,6 +35,20 @@ import { domain } from "../../../../security";
 import ViewRejectionModal from "./ViewRejectionModal";
 import PrintPurchaseOrder from "./PrintPurchaseOrder";
 
+// --- Helper to format currency ---
+const formatCurrency = (amount, currency = "USD") => {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: currency,
+  }).format(amount || 0);
+};
+
+// --- Helper for Date ---
+const formatDate = (dateString) => {
+  if (!dateString) return "N/A";
+  return new Date(dateString).toLocaleDateString();
+};
+
 // --- Mobile Card Component ---
 const MobilePOCard = ({
   po,
@@ -35,10 +56,10 @@ const MobilePOCard = ({
   onToggle,
   onEdit,
   onDelete,
-  onDevDelete, // New Prop
+  onDevDelete,
   onFinalize,
   onRejectItem,
-  onPrint, // <--- Passed Print Function
+  onPrint,
   getStatusColor,
 }) => {
   return (
@@ -66,22 +87,47 @@ const MobilePOCard = ({
         <div className="text-right">
           <span
             className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(
-              po.status
+              po.status,
             )}`}
           >
             {po.status}
           </span>
           <p className="font-bold text-slate-800 mt-2">
-            {new Intl.NumberFormat("en-US", {
-              style: "currency",
-              currency: po.currency || "USD",
-            }).format(po.grandTotal)}
+            {formatCurrency(po.grandTotal, po.currency)}
           </p>
         </div>
       </div>
 
       {expanded && (
         <div className="mt-4 pt-4 border-t border-slate-100">
+          {/* Header Details Section (Mobile) */}
+          <div className="grid grid-cols-1 gap-2 text-xs text-slate-600 mb-4 bg-slate-50 p-3 rounded border border-slate-100">
+            <div className="flex items-center gap-2">
+              <MapPin size={14} className="text-slate-400" />
+              <span>
+                Location: <strong>{po.location || "N/A"}</strong>
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Calendar size={14} className="text-slate-400" />
+              <span>
+                Delivery: <strong>{formatDate(po.expectedDeliveryDate)}</strong>
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <User size={14} className="text-slate-400" />
+              <span>
+                Approver: <strong>{po.approverName || "N/A"}</strong>
+              </span>
+            </div>
+            {po.internalNotes && (
+              <div className="flex items-start gap-2 mt-1">
+                <Info size={14} className="text-slate-400 mt-0.5" />
+                <span className="italic">{po.internalNotes}</span>
+              </div>
+            )}
+          </div>
+
           <h4 className="font-semibold text-slate-700 mb-2 text-sm flex items-center gap-2">
             <Package size={16} /> Line Items
           </h4>
@@ -96,23 +142,25 @@ const MobilePOCard = ({
                     {item.productName}
                   </span>
                   <span className="font-semibold">
-                    {new Intl.NumberFormat("en-US", {
-                      style: "currency",
-                      currency: po.currency || "USD",
-                    }).format(item.lineTotal)}
+                    {formatCurrency(item.lineTotal, po.currency)}
                   </span>
                 </div>
                 <div className="text-xs text-slate-500 grid grid-cols-2 gap-2">
-                  <span>Ordered: {item.orderedQuantity || item.quantity}</span>
+                  <span>
+                    Qty: {item.orderedQuantity || item.quantity}{" "}
+                    {item.unitOfMeasure}
+                  </span>
+                  <span>
+                    Price: {formatCurrency(item.unitPrice, po.currency)}
+                  </span>
                   <span className="text-green-600">
-                    Received: {item.receivedQuantity || 0}
+                    Rec: {item.receivedQuantity || 0}
                   </span>
                   <span className="text-red-500">
-                    Rejected: {item.rejectedQuantity || 0}
+                    Rej: {item.rejectedQuantity || 0}
                   </span>
                 </div>
-                {/* Reject Button */}
-                {!po.isStaging && (
+                {!po.isStaging && po.status !== "Closed" && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -120,15 +168,34 @@ const MobilePOCard = ({
                     }}
                     className="mt-2 w-full py-1 text-xs border border-red-200 text-red-600 rounded hover:bg-red-50"
                   >
-                    Manage Rejections (Revert/Update)
+                    Manage Rejections
                   </button>
                 )}
               </div>
             ))}
           </div>
 
+          {/* Financial Summary (Mobile) */}
+          <div className="mt-4 pt-3 border-t border-slate-100 text-sm space-y-1 text-right">
+            <div className="flex justify-between text-slate-500">
+              <span>Shipping:</span>
+              <span>{formatCurrency(po.shippingCost, po.currency)}</span>
+            </div>
+            <div className="flex justify-between text-slate-500">
+              <span>VAT:</span>
+              <span>{formatCurrency(po.vat, po.currency)}</span>
+            </div>
+            <div className="flex justify-between text-slate-500">
+              <span>EWT:</span>
+              <span>-{formatCurrency(po.ewt, po.currency)}</span>
+            </div>
+            <div className="flex justify-between font-bold text-slate-800 text-base border-t border-slate-200 pt-1 mt-1">
+              <span>Total:</span>
+              <span>{formatCurrency(po.grandTotal, po.currency)}</span>
+            </div>
+          </div>
+
           <div className="flex flex-col gap-2 mt-4 pt-3 border-t border-slate-100">
-            {/* --- PRINT BUTTON FOR MOBILE --- */}
             <button
               onClick={() => onPrint(po)}
               className="flex-1 py-2 bg-slate-100 text-slate-700 rounded text-xs font-medium border border-slate-200 flex items-center justify-center gap-2"
@@ -138,9 +205,10 @@ const MobilePOCard = ({
 
             {po.isStaging ? (
               <div className="flex gap-2">
+                {/* Mobile Button for Post to Live */}
                 <button
                   onClick={() => onFinalize(po.id)}
-                  className="flex-1 py-2 bg-green-50 text-green-600 rounded text-xs font-medium border border-green-200"
+                  className="flex-1 py-2 bg-emerald-600 text-white rounded text-xs font-medium shadow-sm"
                 >
                   Post Live
                 </button>
@@ -159,22 +227,18 @@ const MobilePOCard = ({
               </div>
             ) : (
               <div className="flex gap-2">
-                {/* --- NEW EDIT BUTTON FOR LIVE PO (MOBILE) --- */}
                 <button
                   onClick={() => onEdit(po)}
                   className="flex-1 py-2 bg-indigo-50 text-indigo-600 rounded text-xs font-medium border border-indigo-200"
                 >
                   Edit Order
                 </button>
-
-                {/* Normal Delete */}
                 <button
                   onClick={() => onDelete(po.id)}
                   className="flex-1 py-2 bg-red-50 text-red-600 rounded text-xs font-medium border border-red-200"
                 >
-                  Delete Order
+                  Delete
                 </button>
-                {/* Developer Delete */}
                 <button
                   onClick={() => onDevDelete(po.id)}
                   className="flex-1 py-2 bg-purple-50 text-purple-700 rounded text-xs font-medium border border-purple-200 flex items-center justify-center gap-1"
@@ -199,18 +263,16 @@ const AllPurchaseOrders = () => {
   const [expandedPO, setExpandedPO] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
-  const [activeTab, setActiveTab] = useState("temp");
+  const [activeTab, setActiveTab] = useState("open");
 
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [itemToReject, setItemToReject] = useState({
     lineItem: null,
     headerId: null,
   });
-  // VIEW Modal State (New)
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [itemToView, setItemToView] = useState(null);
 
-  // --- PRINTING STATE & REFS ---
   const [printData, setPrintData] = useState(null);
   const printPORef = useRef();
 
@@ -219,7 +281,6 @@ const AllPurchaseOrders = () => {
     documentTitle: `PO_${printData?.poNumber || "Document"}`,
   });
 
-  // Printing Trigger Function
   const triggerPrint = (po) => {
     setPrintData(po);
     setTimeout(() => {
@@ -227,7 +288,6 @@ const AllPurchaseOrders = () => {
     }, 300);
   };
 
-  // --- Fetch Logic ---
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -249,7 +309,7 @@ const AllPurchaseOrders = () => {
       }));
 
       const combinedData = [...stagingOrders, ...liveOrders].sort(
-        (a, b) => b.id - a.id
+        (a, b) => b.id - a.id,
       );
 
       setPoData(combinedData);
@@ -265,7 +325,6 @@ const AllPurchaseOrders = () => {
     fetchData();
   }, [fetchData]);
 
-  // --- REJECTION / REVERT LOGIC ---
   const openRejectModal = (item, headerId) => {
     setItemToReject({ lineItem: item, headerId: headerId });
     setIsRejectModalOpen(true);
@@ -276,7 +335,6 @@ const AllPurchaseOrders = () => {
     setItemToReject({ lineItem: null, headerId: null });
   };
 
-  // --- REJECTION VIEW LOGIC (New) ---
   const openViewModal = (item) => {
     setItemToView(item);
     setIsViewModalOpen(true);
@@ -293,29 +351,25 @@ const AllPurchaseOrders = () => {
     setLoading(true);
     try {
       const apiUrl = `${domain}/api/PurchaseOrderHeaders/${itemToReject.headerId}/lineitems/${itemToReject.lineItem.id}/reject`;
-
-      // Payload matching C# DTO
       const payload = {
         TotalRejectedQuantity: parseInt(totalRejectedQty),
         ReasonDescription: reason || "",
-        ReasonImage: image || null, // Expecting byte[] or base64 if handled by backend
+        ReasonImage: image || null,
       };
 
       await axios.post(apiUrl, payload);
       toast.success("Rejection status updated successfully!");
       closeRejectModal();
-      fetchData(); // Refresh to see status changes (Open/Closed)
+      fetchData();
     } catch (error) {
-      const msg =
-        error.response?.data?.message || "Failed to update rejection.";
-      toast.error(msg);
-      console.error(error);
+      toast.error(
+        error.response?.data?.message || "Failed to update rejection.",
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  // --- FINALIZE ---
   const finalizePurchaseOrder = async (id) => {
     if (
       !window.confirm("Are you sure you want to finalize this Purchase Order?")
@@ -328,38 +382,33 @@ const AllPurchaseOrders = () => {
       fetchData();
     } catch (error) {
       toast.error(
-        error.response?.data?.message || "Failed to finalize Purchase Order."
+        error.response?.data?.message || "Failed to finalize Purchase Order.",
       );
     } finally {
       setLoading(false);
     }
   };
 
-  // --- NORMAL DELETE (Safe) ---
-  // Controller Goal 2: Normal Delete
-  // Will Fail (400) if GN exists
   const deletePurchaseOrder = async (id) => {
     const targetPO = poData.find((p) => p.id === id);
     if (!targetPO) return;
-
     if (!window.confirm("Are you sure you want to delete this purchase order?"))
       return;
 
     try {
       const endpoint = targetPO.isStaging
         ? `${domain}/api/PurchaseOrderStaging/${id}`
-        : `${domain}/api/PurchaseOrderHeaders/${id}`; // Calls Normal Delete
+        : `${domain}/api/PurchaseOrderHeaders/${id}`;
 
       await axios.delete(endpoint);
       toast.success("Purchase Order Deleted!");
       if (expandedPO === id) setExpandedPO(null);
       fetchData();
     } catch (error) {
-      // Handle the specific Logic from Controller about GN existing
       if (error.response && error.response.status === 400) {
         toast.error(
           error.response.data.message ||
-            "Cannot delete: items have been received (GN exists)."
+            "Cannot delete: items have been received (GN exists).",
         );
       } else {
         toast.error("Failed to delete purchase order.");
@@ -367,23 +416,17 @@ const AllPurchaseOrders = () => {
     }
   };
 
-  // --- DEVELOPER DELETE (Force) ---
-  // Controller Goal 1: Developers Delete
-  // Deletes PO + All GN
   const handleDeveloperDelete = async (id) => {
     if (
       !window.confirm(
-        "⚠️ DEVELOPER DELETE WARNING ⚠️\n\nThis will permanently delete the PO AND ALL associated Goods Notes (Receipts).\n\nAre you sure?"
+        "⚠️ DEVELOPER DELETE WARNING ⚠️\n\nThis will permanently delete the PO AND ALL associated Goods Notes.\n\nAre you sure?",
       )
-    ) {
+    )
       return;
-    }
-
     setLoading(true);
     try {
-      // Calls: [HttpDelete("developersDelete/{id}")]
       await axios.delete(
-        `${domain}/api/PurchaseOrderHeaders/developersDelete/${id}`
+        `${domain}/api/PurchaseOrderHeaders/developersDelete/${id}`,
       );
       toast.success("Developer Delete Successful: PO and GNs removed.");
       if (expandedPO === id) setExpandedPO(null);
@@ -395,17 +438,17 @@ const AllPurchaseOrders = () => {
     }
   };
 
-  // --- Helpers ---
-  const tabFilteredPOs = poData.filter((po) =>
-    activeTab === "temp"
-      ? po.poNumber?.startsWith("TMP-")
-      : !po.poNumber?.startsWith("TMP-")
-  );
+  const tabFilteredPOs = poData.filter((po) => {
+    if (activeTab === "temp") return po.isStaging;
+    if (activeTab === "open") return !po.isStaging && po.status !== "Closed";
+    if (activeTab === "closed") return !po.isStaging && po.status === "Closed";
+    return false;
+  });
 
   const filteredPOs = tabFilteredPOs.filter(
     (po) =>
       po.poNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      po.vendor.toLowerCase().includes(searchTerm.toLowerCase())
+      po.vendor.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
   const indexOfLastItem = currentPage * itemsPerPage;
@@ -429,20 +472,19 @@ const AllPurchaseOrders = () => {
   };
 
   const getStatusColor = (status) => {
-    switch (status) {
-      case "Closed":
-        return "bg-emerald-100 text-emerald-800 border-emerald-200";
-      case "Pending": // or Partially Received
-        return "bg-amber-100 text-amber-800 border-amber-200";
-      case "Partially Received":
-        return "bg-orange-100 text-orange-800 border-orange-200";
-      default:
-        return "bg-slate-100 text-slate-800 border-slate-200";
-    }
+    if (!status) return "bg-slate-100 text-slate-800 border-slate-200";
+    const s = status.toLowerCase();
+    if (s === "closed")
+      return "bg-emerald-100 text-emerald-800 border-emerald-200";
+    if (s.includes("draft")) return "bg-blue-100 text-blue-800 border-blue-200";
+    if (s === "pending") return "bg-amber-100 text-amber-800 border-amber-200";
+    if (s.includes("partially"))
+      return "bg-orange-100 text-orange-800 border-orange-200";
+    return "bg-slate-100 text-slate-800 border-slate-200";
   };
 
   return (
-    <div className="min-h-screen pb-12 ">
+    <div className="min-h-screen pb-12">
       <ToastContainer position="top-right" autoClose={3000} />
 
       {/* Header */}
@@ -465,27 +507,24 @@ const AllPurchaseOrders = () => {
             </button>
           </div>
 
-          {/* Tabs */}
-          <div className="flex gap-6 mt-6 border-b border-slate-200">
+          <div className="flex gap-6 mt-6 border-b border-slate-200 overflow-x-auto">
             <button
               onClick={() => handleTabChange("temp")}
-              className={`pb-3 text-sm font-medium transition-all relative ${
-                activeTab === "temp"
-                  ? "text-indigo-600 border-b-2 border-indigo-600"
-                  : "text-slate-500 hover:text-slate-700"
-              }`}
+              className={`pb-3 text-sm font-medium transition-all relative whitespace-nowrap ${activeTab === "temp" ? "text-indigo-600 border-b-2 border-indigo-600" : "text-slate-500 hover:text-slate-700"}`}
             >
               Drafts (Staging)
             </button>
             <button
-              onClick={() => handleTabChange("po")}
-              className={`pb-3 text-sm font-medium transition-all relative ${
-                activeTab === "po"
-                  ? "text-indigo-600 border-b-2 border-indigo-600"
-                  : "text-slate-500 hover:text-slate-700"
-              }`}
+              onClick={() => handleTabChange("open")}
+              className={`pb-3 text-sm font-medium transition-all relative whitespace-nowrap flex items-center gap-2 ${activeTab === "open" ? "text-indigo-600 border-b-2 border-indigo-600" : "text-slate-500 hover:text-slate-700"}`}
             >
-              Live Orders
+              <Clock size={16} /> Open Orders
+            </button>
+            <button
+              onClick={() => handleTabChange("closed")}
+              className={`pb-3 text-sm font-medium transition-all relative whitespace-nowrap flex items-center gap-2 ${activeTab === "closed" ? "text-indigo-600 border-b-2 border-indigo-600" : "text-slate-500 hover:text-slate-700"}`}
+            >
+              <Archive size={16} /> Closed Orders
             </button>
           </div>
         </div>
@@ -534,9 +573,7 @@ const AllPurchaseOrders = () => {
                     <React.Fragment key={po.id}>
                       <tr
                         onClick={() => toggleExpandPO(po.id)}
-                        className={`hover:bg-slate-50 transition cursor-pointer ${
-                          expandedPO === po.id ? "bg-slate-50" : ""
-                        }`}
+                        className={`hover:bg-slate-50 transition cursor-pointer ${expandedPO === po.id ? "bg-slate-50" : ""}`}
                       >
                         <td className="px-4 py-4 text-center">
                           {expandedPO === po.id ? (
@@ -555,46 +592,45 @@ const AllPurchaseOrders = () => {
                         </td>
                         <td className="px-4 py-4">{po.vendor}</td>
                         <td className="px-4 py-4">
-                          {new Date(po.creationDate).toLocaleDateString()}
+                          {formatDate(po.creationDate)}
                         </td>
                         <td className="px-4 py-4">
                           <span
-                            className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(
-                              po.status
-                            )}`}
+                            className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(po.status)}`}
                           >
                             {po.status}
                           </span>
                         </td>
                         <td className="px-4 py-4 text-right font-medium text-slate-900">
-                          {new Intl.NumberFormat("en-US", {
-                            style: "currency",
-                            currency: po.currency || "USD",
-                          }).format(po.grandTotal)}
+                          {formatCurrency(po.grandTotal, po.currency)}
                         </td>
                         <td className="px-4 py-4">
                           <div
                             className="flex items-center justify-center gap-2"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            {/* PRINT BUTTON */}
-                            <button
-                              onClick={() => triggerPrint(po)}
-                              title="Print PO"
-                              className="p-1.5 text-slate-600 hover:bg-slate-100 rounded transition"
-                            >
-                              <Printer size={18} />
-                            </button>
-
+                            {/* --- UPDATED: Button for Post to Live --- */}
                             {po.isStaging ? (
                               <>
                                 <button
-                                  onClick={() => finalizePurchaseOrder(po.id)}
-                                  title="Post to Live"
-                                  className="p-1.5 text-green-600 hover:bg-green-50 rounded transition"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    finalizePurchaseOrder(po.id);
+                                  }}
+                                  className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded shadow-sm transition-colors mr-2 font-medium"
+                                  title="Finalize and Post to Live"
                                 >
-                                  <CheckCircle size={18} />
+                                  <CheckCircle size={14} />
+                                  Post to Live
                                 </button>
+                                <button
+                                  onClick={() => triggerPrint(po)}
+                                  title="Print PO"
+                                  className="p-1.5 text-slate-600 hover:bg-slate-100 rounded transition"
+                                >
+                                  <Printer size={18} />
+                                </button>
+
                                 <button
                                   onClick={() => openModal(po)}
                                   title="Edit"
@@ -612,7 +648,14 @@ const AllPurchaseOrders = () => {
                               </>
                             ) : (
                               <>
-                                {/* --- NEW EDIT BUTTON FOR LIVE PO --- */}
+                                <button
+                                  onClick={() => triggerPrint(po)}
+                                  title="Print PO"
+                                  className="p-1.5 text-slate-600 hover:bg-slate-100 rounded transition"
+                                >
+                                  <Printer size={18} />
+                                </button>
+
                                 <button
                                   onClick={() => openModal(po)}
                                   title="Edit Order"
@@ -621,7 +664,6 @@ const AllPurchaseOrders = () => {
                                   <Edit size={18} />
                                 </button>
 
-                                {/* Normal Delete */}
                                 <button
                                   onClick={() => deletePurchaseOrder(po.id)}
                                   title="Delete Order (Safe)"
@@ -629,10 +671,9 @@ const AllPurchaseOrders = () => {
                                 >
                                   <Trash2 size={18} />
                                 </button>
-                                {/* Developer Delete */}
                                 <button
                                   onClick={() => handleDeveloperDelete(po.id)}
-                                  title="Developer Delete (Force - Removes GN)"
+                                  title="Developer Delete"
                                   className="p-1.5 text-purple-700 hover:bg-purple-50 rounded transition"
                                 >
                                   <ShieldAlert size={18} />
@@ -643,34 +684,83 @@ const AllPurchaseOrders = () => {
                         </td>
                       </tr>
 
-                      {/* Expanded Details */}
                       {expandedPO === po.id && (
                         <tr>
                           <td
                             colSpan="7"
                             className="bg-slate-50 p-4 border-b border-slate-200 shadow-inner"
                           >
-                            <div className="bg-white rounded border border-slate-200 p-4">
-                              <h4 className="font-semibold text-slate-800 text-sm mb-3 flex items-center gap-2">
-                                <Package size={16} /> Line Items
+                            <div className="bg-white rounded border border-slate-200 p-6">
+                              {/* Header Details Grid */}
+                              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+                                <div className="space-y-1">
+                                  <span className="text-xs text-slate-400 uppercase font-semibold flex items-center gap-1">
+                                    <MapPin size={12} /> Location
+                                  </span>
+                                  <p className="text-sm font-medium text-slate-700">
+                                    {po.location || "N/A"}
+                                  </p>
+                                </div>
+                                <div className="space-y-1">
+                                  <span className="text-xs text-slate-400 uppercase font-semibold flex items-center gap-1">
+                                    <Calendar size={12} /> Delivery Date
+                                  </span>
+                                  <p className="text-sm font-medium text-slate-700">
+                                    {formatDate(po.expectedDeliveryDate)}
+                                  </p>
+                                </div>
+                                <div className="space-y-1">
+                                  <span className="text-xs text-slate-400 uppercase font-semibold flex items-center gap-1">
+                                    <User size={12} /> Approver
+                                  </span>
+                                  <p className="text-sm font-medium text-slate-700">
+                                    {po.approverName || "N/A"}
+                                  </p>
+                                </div>
+                                <div className="space-y-1">
+                                  <span className="text-xs text-slate-400 uppercase font-semibold flex items-center gap-1">
+                                    <CreditCard size={12} /> Payment Terms
+                                  </span>
+                                  <p className="text-sm font-medium text-slate-700">
+                                    {po.paymentTerms || "N/A"}
+                                  </p>
+                                </div>
+                                {po.internalNotes && (
+                                  <div className="col-span-1 md:col-span-4 bg-yellow-50 p-3 rounded border border-yellow-100 mt-2">
+                                    <span className="text-xs text-yellow-600 font-bold uppercase block mb-1">
+                                      Internal Notes
+                                    </span>
+                                    <p className="text-sm text-yellow-800">
+                                      {po.internalNotes}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+
+                              <h4 className="font-semibold text-slate-800 text-sm mb-3 flex items-center gap-2 border-b border-slate-100 pb-2">
+                                <Package size={16} /> Order Items
                               </h4>
-                              <table className="w-full text-xs text-left text-slate-600">
+
+                              <table className="w-full text-xs text-left text-slate-600 mb-6">
                                 <thead className="bg-slate-100 text-slate-500 uppercase font-medium">
                                   <tr>
                                     <th className="px-3 py-2">Product</th>
-                                    <th className="px-3 py-2">Ordered</th>
+                                    <th className="px-3 py-2">Quantity</th>
+                                    <th className="px-3 py-2 text-right">
+                                      Unit Price
+                                    </th>
                                     {!po.isStaging && (
                                       <>
-                                        <th className="px-3 py-2 text-green-600">
+                                        <th className="px-3 py-2 text-green-600 text-center">
                                           Received
                                         </th>
-                                        <th className="px-3 py-2 text-red-600">
+                                        <th className="px-3 py-2 text-red-600 text-center">
                                           Rejected
                                         </th>
                                       </>
                                     )}
                                     <th className="px-3 py-2 text-right">
-                                      Total
+                                      Line Total
                                     </th>
                                     {!po.isStaging && (
                                       <th className="px-3 py-2 text-center">
@@ -692,21 +782,27 @@ const AllPurchaseOrders = () => {
                                         {item.orderedQuantity || item.quantity}{" "}
                                         {item.unitOfMeasure}
                                       </td>
+                                      <td className="px-3 py-2 text-right">
+                                        {formatCurrency(
+                                          item.unitPrice,
+                                          po.currency,
+                                        )}
+                                      </td>
                                       {!po.isStaging && (
                                         <>
-                                          <td className="px-3 py-2 text-green-600">
+                                          <td className="px-3 py-2 text-green-600 text-center font-bold">
                                             {item.receivedQuantity || 0}
                                           </td>
-                                          <td className="px-3 py-2 text-red-600">
+                                          <td className="px-3 py-2 text-red-600 text-center font-bold">
                                             {item.rejectedQuantity || 0}
                                           </td>
                                         </>
                                       )}
                                       <td className="px-3 py-2 text-right font-medium">
-                                        {new Intl.NumberFormat("en-US", {
-                                          style: "currency",
-                                          currency: po.currency || "USD",
-                                        }).format(item.lineTotal)}
+                                        {formatCurrency(
+                                          item.lineTotal,
+                                          po.currency,
+                                        )}
                                       </td>
                                       {!po.isStaging && (
                                         <td className="px-3 py-2 text-center">
@@ -717,21 +813,23 @@ const AllPurchaseOrders = () => {
                                                   e.stopPropagation();
                                                   openViewModal(item);
                                                 }}
-                                                title="View Rejection Details"
-                                                className="flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2 py-1 rounded transition"
+                                                title="View"
+                                                className="text-blue-600 hover:text-blue-800"
                                               >
-                                                <Eye size={16} /> View
+                                                <Eye size={16} />
                                               </button>
                                             )}
-                                            <button
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                openRejectModal(item, po.id);
-                                              }}
-                                              className="text-red-600 hover:text-red-800 hover:bg-indigo-50 px-2 py-1 rounded transition border border-red-100"
-                                            >
-                                              Reason For Rejection
-                                            </button>
+                                            {po.status !== "Closed" && (
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  openRejectModal(item, po.id);
+                                                }}
+                                                className="text-red-600 hover:underline"
+                                              >
+                                                Rejection
+                                              </button>
+                                            )}
                                           </div>
                                         </td>
                                       )}
@@ -739,6 +837,42 @@ const AllPurchaseOrders = () => {
                                   ))}
                                 </tbody>
                               </table>
+
+                              {/* Financial Summary Section */}
+                              <div className="flex justify-end">
+                                <div className="w-full md:w-1/3 bg-slate-50 p-4 rounded border border-slate-100">
+                                  <div className="flex justify-between text-sm text-slate-600 mb-2">
+                                    <span>Shipping Cost:</span>
+                                    <span>
+                                      {formatCurrency(
+                                        po.shippingCost,
+                                        po.currency,
+                                      )}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between text-sm text-slate-600 mb-2">
+                                    <span>VAT:</span>
+                                    <span>
+                                      {formatCurrency(po.vat, po.currency)}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between text-sm text-slate-600 mb-2">
+                                    <span>EWT (Withholding):</span>
+                                    <span className="text-red-500">
+                                      -{formatCurrency(po.ewt, po.currency)}
+                                    </span>
+                                  </div>
+                                  <div className="border-t border-slate-200 pt-2 mt-2 flex justify-between text-base font-bold text-slate-800">
+                                    <span>Grand Total:</span>
+                                    <span>
+                                      {formatCurrency(
+                                        po.grandTotal,
+                                        po.currency,
+                                      )}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
                             </div>
                           </td>
                         </tr>
@@ -752,7 +886,13 @@ const AllPurchaseOrders = () => {
                         className="px-6 py-10 text-center text-slate-400 flex flex-col items-center justify-center"
                       >
                         <AlertCircle size={40} className="mb-2 opacity-50" />
-                        No purchase orders found.
+                        No{" "}
+                        {activeTab === "temp"
+                          ? "drafts"
+                          : activeTab === "closed"
+                            ? "closed orders"
+                            : "open orders"}{" "}
+                        found.
                       </td>
                     </tr>
                   )}
@@ -770,13 +910,18 @@ const AllPurchaseOrders = () => {
                   onToggle={toggleExpandPO}
                   onEdit={openModal}
                   onDelete={deletePurchaseOrder}
-                  onDevDelete={handleDeveloperDelete} // Pass Dev Delete
+                  onDevDelete={handleDeveloperDelete}
                   onFinalize={finalizePurchaseOrder}
                   onRejectItem={openRejectModal}
-                  onPrint={triggerPrint} // <--- Pass Print Function
+                  onPrint={triggerPrint}
                   getStatusColor={getStatusColor}
                 />
               ))}
+              {currentPOs.length === 0 && (
+                <div className="text-center text-slate-400 py-10">
+                  No orders found.
+                </div>
+              )}
             </div>
 
             <div className="mt-6">
@@ -791,12 +936,10 @@ const AllPurchaseOrders = () => {
         )}
       </div>
 
-      {/* --- HIDDEN PRINT COMPONENT --- */}
       <div style={{ display: "none" }}>
         <PrintPurchaseOrder ref={printPORef} po={printData} />
       </div>
 
-      {/* Add/Edit Modal */}
       {isModalVisible && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
@@ -809,7 +952,6 @@ const AllPurchaseOrders = () => {
         </div>
       )}
 
-      {/* Reject Modal */}
       <RejectItemModal
         isOpen={isRejectModalOpen}
         onClose={closeRejectModal}

@@ -1,5 +1,3 @@
-// src/components/YourModule/PurchaseOrderModule/AddPurchaseOrder.js
-
 import React, { useEffect, useState, useCallback } from "react";
 import Loader from "../../../loader/Loader";
 import { toast } from "react-toastify";
@@ -21,7 +19,7 @@ const initialLineItem = {
   quantity: 1,
   unitOfMeasureId: "",
   unitPrice: 0,
-  recommendedPrice: 0, // Added to store the hint value
+  recommendedPrice: 0,
   lineTotal: 0,
   rejectedQuantity: 0,
   isCustom: false,
@@ -65,6 +63,7 @@ const AddItemModal = ({ isOpen, onClose, onSelectOption }) => {
 };
 
 const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
+  // --- 1. MODIFIED STATE: Added Vat/Ewt fields ---
   const [formData, setFormData] = useState({
     poNumber: "Draft",
     creationDate: new Date().toISOString().split("T")[0],
@@ -73,15 +72,23 @@ const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
     internalNotes: "",
     locationId: "",
     vendorId: "",
+    approverId: "",
     shippingCost: 0,
     currency: "PHP",
     paymentTerms: "Due on Receipt",
     grandTotal: 0,
     purchaseOrderLineItems: [],
+    // New Logic Fields
+    hasVat: false,
+    hasEwt: false,
+    vatAmount: 0,
+    ewtAmount: 0,
+    vatableAmount: 0,
   });
 
   const [locations, setLocations] = useState([]);
   const [vendors, setVendors] = useState([]);
+  const [approvers, setApprovers] = useState([]);
   const [unitOfMeasures, setUnitOfMeasures] = useState([]);
   const [productOptions, setProductOptions] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -92,22 +99,25 @@ const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
   const labelStyles = "block text-sm font-medium text-gray-700 mb-1";
   const readOnlyInputStyles = `${inputStyles} bg-gray-100 cursor-not-allowed`;
 
-  // --- 1. Fetch Dropdown Data ---
   useEffect(() => {
     const fetchInitialData = async () => {
       setIsLoading(true);
       try {
-        const [locationsRes, vendorsRes, uomRes, productsRes] =
+        const [locationsRes, vendorsRes, uomRes, productsRes, approversRes] =
           await Promise.all([
             axios.get(`${domain}/api/locations`),
             axios.get(`${domain}/api/vendors`),
             axios.get(`${domain}/api/UnitOfMeasurements`),
             axios.get(`${domain}/api/Products`),
+            axios.get(`${domain}/api/Approvers`),
           ]);
+        console.log("Full Vendors Response Object:", vendorsRes);
+        console.log("Vendors Data Only:", vendorsRes.data);
 
         setLocations(locationsRes.data);
         setVendors(vendorsRes.data);
         setUnitOfMeasures(uomRes.data);
+        setApprovers(approversRes.data);
 
         const formattedProducts = productsRes.data.map((item) => ({
           value: item.id,
@@ -126,7 +136,7 @@ const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
     fetchInitialData();
   }, []);
 
-  // --- 2. Populate Form Data for Edit ---
+  // --- Populate Form Data for Edit ---
   useEffect(() => {
     if (poToEdit) {
       setFormData({
@@ -140,16 +150,22 @@ const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
           : "",
         locationId: poToEdit.locationId || "",
         vendorId: poToEdit.vendorId || "",
+        approverId: poToEdit.approverId || "",
         shippingCost: poToEdit.shippingCost || 0,
         currency: poToEdit.currency || "PHP",
         paymentTerms: poToEdit.paymentTerms || "Due on Receipt",
+        // Map saved values back to UI state
+        hasVat: poToEdit.vat !== null && poToEdit.vat > 0, // Assuming if amount exists, toggle is on
+        hasEwt: poToEdit.ewt !== null && poToEdit.ewt > 0,
+        vatAmount: poToEdit.vat || 0,
+        ewtAmount: poToEdit.ewt || 0,
         purchaseOrderLineItems: poToEdit.purchaseOrderLineItems.map((item) => ({
           ...item,
           productId: item.productId || null,
           productName: item.productName || "",
           quantity: item.quantity || item.orderedQuantity || 0,
           unitPrice: item.unitPrice || 0,
-          recommendedPrice: 0, // Default to 0 on edit until functionality to fetch specific historic context is added or needed
+          recommendedPrice: 0,
           unitOfMeasureId: item.unitOfMeasureId || "",
           rejectedQuantity: item.rejectedQuantity || 0,
           lineTotal:
@@ -161,13 +177,11 @@ const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
     }
   }, [poToEdit]);
 
-  // --- Helper: Fetch Recommendation ---
   const fetchRecommendedPrice = async (vendorId, productId) => {
     if (!vendorId || !productId) return 0;
     try {
-      // Calls your new Backend Endpoint
       const response = await axios.get(
-        `${domain}/api/PurchasePriceHistories/recommendation?vendorId=${vendorId}&productId=${productId}`
+        `${domain}/api/PurchasePriceHistories/recommendation?vendorId=${vendorId}&productId=${productId}`,
       );
       return response.data.price || 0;
     } catch (error) {
@@ -179,72 +193,150 @@ const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
   const handleHeaderChange = async (e) => {
     const { id, value } = e.target;
 
-    // Update state first
-    setFormData((prev) => ({ ...prev, [id]: value }));
-
-    // Logic: If Vendor Changes, re-fetch recommendations for all System Products
+    // --- 2. MODIFIED LOGIC: Vendor Selection triggers Checkbox updates ---
     if (id === "vendorId" && value) {
+      const selectedVendor = vendors.find((v) => v.id === parseInt(value));
+      const autoVat = selectedVendor?.priceType === "vatInc";
+      const autoEwt = selectedVendor?.ewt === true;
+      // Update state with vendor specific logic
+      setFormData((prev) => ({
+        ...prev,
+        [id]: value,
+        hasVat: autoVat,
+        hasEwt: autoEwt,
+      }));
+
+      // Existing Recommendation Logic
       const currentItems = [...formData.purchaseOrderLineItems];
       const updatedItems = await Promise.all(
         currentItems.map(async (item) => {
           if (item.productId && !item.isCustom) {
             const recPrice = await fetchRecommendedPrice(value, item.productId);
-            // If we found a price history, update unit price AND recommendation state
             if (recPrice > 0) {
               return {
                 ...item,
-                unitPrice: recPrice, // Auto-apply to input
-                recommendedPrice: recPrice, // Store for the "Below" text
+                unitPrice: recPrice,
+                recommendedPrice: recPrice,
                 lineTotal: (item.quantity || 0) * recPrice,
               };
             } else {
-              // Reset recommendation if none found for new vendor
               return { ...item, recommendedPrice: 0 };
             }
           }
           return item;
-        })
+        }),
       );
       setFormData((prev) => ({
         ...prev,
-        [id]: value, // ensure value sticks
         purchaseOrderLineItems: updatedItems,
       }));
+    } else {
+      // Standard update for other fields
+      setFormData((prev) => ({ ...prev, [id]: value }));
     }
   };
 
-  const calculateTotals = useCallback((items, shippingCost) => {
+  // --- 3. CALCULATIONS (Includes VAT/EWT Logic) ---
+  const calculateTotals = useCallback((items, shippingCost, hasVat, hasEwt) => {
     const subtotal = items.reduce(
       (acc, item) => acc + (item.quantity || 0) * (item.unitPrice || 0),
-      0
+      0,
     );
-    const grandTotal = subtotal + (parseFloat(shippingCost) || 0);
-    return { subtotal, grandTotal };
+
+    let vatAmt = 0;
+    let ewtAmt = 0;
+    let netOfVat = subtotal; // Default to subtotal if no VAT
+
+    // 1. Handle VAT
+    if (hasVat) {
+      // Extract Base (Vatable Sales)
+      netOfVat = subtotal / 1.12;
+      vatAmt = netOfVat * 0.12;
+    }
+
+    // 2. Handle EWT (Calculated on the Net Base)
+    if (hasEwt) {
+      // EWT is based on the Net amount (Vatable Sales)
+      const taxBase = hasVat ? netOfVat : subtotal;
+      ewtAmt = taxBase * 0.01;
+    }
+
+    const grandTotal = subtotal + (parseFloat(shippingCost) || 0) - ewtAmt;
+
+    // Return netOfVat here
+    return { subtotal, grandTotal, vatAmt, ewtAmt, netOfVat };
   }, []);
 
   useEffect(() => {
-    const { grandTotal } = calculateTotals(
+    const { grandTotal, vatAmt, ewtAmt, netOfVat } = calculateTotals(
       formData.purchaseOrderLineItems,
-      formData.shippingCost
+      formData.shippingCost,
+      formData.hasVat,
+      formData.hasEwt,
     );
+
     setFormData((prev) => {
-      if (prev.grandTotal === grandTotal) return prev;
-      return { ...prev, grandTotal };
+      if (
+        prev.grandTotal === grandTotal &&
+        prev.vatAmount === vatAmt &&
+        prev.ewtAmount === ewtAmt &&
+        prev.vatableAmount === netOfVat // Check this too
+      ) {
+        return prev;
+      }
+      // Update state with vatableAmount
+      return {
+        ...prev,
+        grandTotal,
+        vatAmount: vatAmt,
+        ewtAmount: ewtAmt,
+        vatableAmount: netOfVat,
+      };
     });
-  }, [formData.purchaseOrderLineItems, formData.shippingCost, calculateTotals]);
+  }, [
+    formData.purchaseOrderLineItems,
+    formData.shippingCost,
+    formData.hasVat,
+    formData.hasEwt,
+    calculateTotals,
+  ]);
+
+  useEffect(() => {
+    const { grandTotal, vatAmt, ewtAmt } = calculateTotals(
+      formData.purchaseOrderLineItems,
+      formData.shippingCost,
+      formData.hasVat,
+      formData.hasEwt,
+    );
+
+    setFormData((prev) => {
+      // Prevent infinite loop by checking if values actually changed
+      if (
+        prev.grandTotal === grandTotal &&
+        prev.vatAmount === vatAmt &&
+        prev.ewtAmount === ewtAmt
+      ) {
+        return prev;
+      }
+      return { ...prev, grandTotal, vatAmount: vatAmt, ewtAmount: ewtAmt };
+    });
+  }, [
+    formData.purchaseOrderLineItems,
+    formData.shippingCost,
+    formData.hasVat,
+    formData.hasEwt,
+    calculateTotals,
+  ]);
 
   const handleLineItemChange = (index, field, value) => {
     const updatedItems = [...formData.purchaseOrderLineItems];
     const lineItem = { ...updatedItems[index] };
-
     lineItem[field] = value;
-
     if (field === "quantity" || field === "unitPrice") {
       const qty = parseFloat(lineItem.quantity) || 0;
       const price = parseFloat(lineItem.unitPrice) || 0;
       lineItem.lineTotal = qty * price;
     }
-
     updatedItems[index] = lineItem;
     setFormData((prev) => ({ ...prev, purchaseOrderLineItems: updatedItems }));
   };
@@ -258,23 +350,20 @@ const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
       lineItem.productName = selectedOption.label.split(" - ")[0];
       lineItem.unitOfMeasureId = selectedOption.unitOfMeasureId || "";
 
-      // Default price from Product Master
       let priceToUse = selectedOption.unitPrice || 0;
       let recPrice = 0;
 
-      // Check if Vendor is selected to get Recommended Price
       if (formData.vendorId) {
         recPrice = await fetchRecommendedPrice(
           formData.vendorId,
-          lineItem.productId
+          lineItem.productId,
         );
         if (recPrice > 0) {
-          priceToUse = recPrice; // Auto-fill Input
+          priceToUse = recPrice;
         }
       }
-
       lineItem.unitPrice = priceToUse;
-      lineItem.recommendedPrice = recPrice; // Set visual hint
+      lineItem.recommendedPrice = recPrice;
     } else {
       lineItem.productId = null;
       lineItem.productName = "";
@@ -282,9 +371,7 @@ const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
       lineItem.unitOfMeasureId = "";
       lineItem.recommendedPrice = 0;
     }
-
     lineItem.lineTotal = (lineItem.quantity || 0) * (lineItem.unitPrice || 0);
-
     updatedItems[index] = lineItem;
     setFormData((prev) => ({ ...prev, purchaseOrderLineItems: updatedItems }));
   };
@@ -316,7 +403,7 @@ const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
     setFormData((prev) => ({
       ...prev,
       purchaseOrderLineItems: prev.purchaseOrderLineItems.filter(
-        (_, i) => i !== index
+        (_, i) => i !== index,
       ),
     }));
   };
@@ -324,6 +411,10 @@ const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
   const prepareSubmissionData = () => {
     const submissionData = {
       ...formData,
+      // --- 4. MAP TO SAVE LOGIC: vat and ewt ---
+      vat: formData.hasVat ? formData.vatAmount : null,
+      ewt: formData.hasEwt ? formData.ewtAmount : null,
+
       purchaseOrderLineItems: formData.purchaseOrderLineItems.map((item) => ({
         id: item.id || 0,
         lineNumber: item.lineNumber,
@@ -342,16 +433,25 @@ const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
 
     submissionData.locationId = parseInt(submissionData.locationId, 10);
     submissionData.vendorId = parseInt(submissionData.vendorId, 10);
+    submissionData.approverId = submissionData.approverId
+      ? parseInt(submissionData.approverId, 10)
+      : null;
     submissionData.shippingCost = parseFloat(submissionData.shippingCost || 0);
+
+    // Remove UI helpers before sending if API is strict
+    delete submissionData.hasVat;
+    delete submissionData.hasEwt;
+    delete submissionData.vatAmount;
+    delete submissionData.ewtAmount;
 
     return submissionData;
   };
 
-  // --- STRICT VALIDATION FOR UOM ---
   const validateForm = () => {
     const errors = [];
     if (!formData.locationId) errors.push("Location is required.");
     if (!formData.vendorId) errors.push("Vendor is required.");
+    if (!formData.approverId) errors.push("Approver is required.");
     if (!formData.creationDate) errors.push("Creation Date is required.");
     if (!formData.expectedDeliveryDate)
       errors.push("Expected Delivery Date is required.");
@@ -360,29 +460,23 @@ const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
       errors.push("Please add at least one line item.");
     }
 
-    // CHECK EVERY LINE ITEM
     formData.purchaseOrderLineItems.forEach((item, index) => {
       const row = index + 1;
       if (!item.quantity || item.quantity <= 0) {
         errors.push(`Row ${row}: Quantity must be greater than 0.`);
       }
-
-      // THE UOM TRAP CHECK
       if (!item.unitOfMeasureId) {
         if (item.isCustom) {
-          // If custom, the user forgot to pick one
           errors.push(`Row ${row}: Unit of Measure (UOM) is required.`);
         } else {
-          // If system item, they can't change it, so we warn them to fix the product setup
           errors.push(
-            `Row ${row}: System Item "${item.productName}" has no UOM. Please complete the product setup in your settings.`
+            `Row ${row}: System Item "${item.productName}" has no UOM.`,
           );
         }
       }
     });
 
     if (errors.length > 0) {
-      // Show first 3 errors max to avoid spamming
       errors.slice(0, 3).forEach((err) => toast.error(err));
       if (errors.length > 3)
         toast.error(`...and ${errors.length - 3} more errors.`);
@@ -393,7 +487,7 @@ const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
 
   const handleSave = async (e) => {
     if (e) e.preventDefault();
-    if (!validateForm()) return; // Validation stops here if no UOM
+    if (!validateForm()) return;
     await processSubmission();
   };
 
@@ -407,13 +501,13 @@ const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
       if (isLiveOrder) {
         await axios.put(
           `${domain}/api/PurchaseOrderHeaders/${id}`,
-          submissionData
+          submissionData,
         );
         toast.success("Live Purchase Order updated successfully!");
       } else if (id) {
         await axios.put(
           `${domain}/api/PurchaseOrderStaging/${id}`,
-          submissionData
+          submissionData,
         );
         toast.success("Draft updated successfully!");
       } else {
@@ -426,11 +520,11 @@ const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
     } catch (error) {
       console.error(
         "Error submitting PO:",
-        error.response?.data || error.message
+        error.response?.data || error.message,
       );
       if (error.response?.status === 400) {
         toast.error(
-          error.response.data.message || "Operation failed: Bad Request"
+          error.response.data.message || "Operation failed: Bad Request",
         );
       } else {
         toast.error("An unexpected error occurred.");
@@ -440,7 +534,12 @@ const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
     }
   };
 
-  const subtotal = calculateTotals(formData.purchaseOrderLineItems, 0).subtotal;
+  const subtotal = calculateTotals(
+    formData.purchaseOrderLineItems,
+    0,
+    false,
+    false,
+  ).subtotal;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
@@ -526,7 +625,32 @@ const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
                     </option>
                   ))}
                 </select>
+
+                {/* --- 5. UI: TAX TOGGLES (IMITATING TOTALPOS) --- */}
+                {/* Only show these if a vendor is selected or to manually override */}
+
+                {/* ----------------------------------------------- */}
               </div>
+
+              <div>
+                <label htmlFor="approverId" className={labelStyles}>
+                  Approver <span className="text-red-500">*</span>
+                </label>
+                <select
+                  id="approverId"
+                  value={formData.approverId}
+                  onChange={handleHeaderChange}
+                  className={inputStyles}
+                >
+                  <option value="">Select Approver</option>
+                  {approvers.map((app) => (
+                    <option key={app.approverId} value={app.approverId}>
+                      {app.employeeName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div>
                 <label htmlFor="creationDate" className={labelStyles}>
                   Creation Date <span className="text-red-500">*</span>
@@ -635,7 +759,7 @@ const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
                                 placeholder="Select a product..."
                                 value={
                                   productOptions.find(
-                                    (opt) => opt.value === item.productId
+                                    (opt) => opt.value === item.productId,
                                   ) || null
                                 }
                                 onChange={(option) =>
@@ -669,21 +793,20 @@ const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
                               handleLineItemChange(
                                 index,
                                 "quantity",
-                                e.target.value
+                                e.target.value,
                               )
                             }
                             className={`${inputStyles} w-full`}
                           />
                         </td>
                         <td className="px-3 py-4">
-                          {/* THE UOM DROPDOWN - REMAINS DISABLED IF SYSTEM ITEM (THE TRAP) */}
                           <select
                             value={item.unitOfMeasureId || ""}
                             onChange={(e) =>
                               handleLineItemChange(
                                 index,
                                 "unitOfMeasureId",
-                                e.target.value
+                                e.target.value,
                               )
                             }
                             disabled={!item.isCustom}
@@ -705,7 +828,6 @@ const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
                             ))}
                           </select>
                         </td>
-                        {/* THIS IS THE MODIFIED UNIT PRICE COLUMN WITH RECOMMENDATION LOGIC */}
                         <td className="px-3 py-4">
                           <input
                             type="number"
@@ -716,19 +838,18 @@ const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
                               handleLineItemChange(
                                 index,
                                 "unitPrice",
-                                e.target.value
+                                e.target.value,
                               )
                             }
                             className={`${inputStyles} w-full`}
                           />
-                          {/* THE RECOMMENDATION APPEARS HERE BELOW THE INPUT */}
                           {item.recommendedPrice > 0 && (
                             <div
                               onClick={() =>
                                 handleLineItemChange(
                                   index,
                                   "unitPrice",
-                                  item.recommendedPrice
+                                  item.recommendedPrice,
                                 )
                               }
                               className="mt-1 text-xs text-indigo-600 font-medium cursor-pointer hover:underline hover:text-indigo-800"
@@ -814,6 +935,67 @@ const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
             </div>
             <div className="rounded-lg border bg-white p-6 flex flex-col justify-between">
               <div className="space-y-3">
+                <div className="mt-4 flex items-center space-x-6">
+                  {/* VAT Toggle */}
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <div className="relative">
+                      <input
+                        type="checkbox"
+                        checked={formData.hasVat}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            hasVat: e.target.checked,
+                          }))
+                        }
+                        className="sr-only"
+                      />
+                      <div
+                        className={`block w-10 h-6 rounded-full transition ${
+                          formData.hasVat ? "bg-blue-500" : "bg-gray-300"
+                        }`}
+                      ></div>
+                      <div
+                        className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition transform ${
+                          formData.hasVat ? "translate-x-4" : ""
+                        }`}
+                      ></div>
+                    </div>
+                    <span className="text-xs font-bold text-gray-700">
+                      VAT (12%)
+                    </span>
+                  </label>
+
+                  {/* EWT Toggle */}
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <div className="relative">
+                      <input
+                        type="checkbox"
+                        checked={formData.hasEwt}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            hasEwt: e.target.checked,
+                          }))
+                        }
+                        className="sr-only"
+                      />
+                      <div
+                        className={`block w-10 h-6 rounded-full transition ${
+                          formData.hasEwt ? "bg-blue-500" : "bg-gray-300"
+                        }`}
+                      ></div>
+                      <div
+                        className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition transform ${
+                          formData.hasEwt ? "translate-x-4" : ""
+                        }`}
+                      ></div>
+                    </div>
+                    <span className="text-xs font-bold text-gray-700">
+                      EWT (1%)
+                    </span>
+                  </label>
+                </div>
                 <div className="flex justify-between items-center text-md">
                   <span className="text-gray-600">Subtotal:</span>
                   <span className="font-semibold text-gray-800">
@@ -824,6 +1006,49 @@ const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
                     })}
                   </span>
                 </div>
+
+                {/* Display VAT/EWT Breakdown if Active */}
+                {formData.hasVat && (
+                  <>
+                    <div className="flex justify-between items-center text-xs text-gray-500">
+                      <span>VAT (12%):</span>
+                      <span>
+                        {formData.currency}{" "}
+                        {Number(formData.vatAmount).toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </span>
+                    </div>
+
+                    {/* 👇 ADD THIS BLOCK HERE 👇 */}
+                    <div className="flex justify-between items-center text-xs text-gray-500">
+                      <span>Vatable Sales:</span>
+                      <span>
+                        {formData.currency}{" "}
+                        {Number(formData.vatableAmount).toLocaleString(
+                          undefined,
+                          {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          },
+                        )}
+                      </span>
+                    </div>
+                  </>
+                )}
+                {formData.hasEwt && (
+                  <div className="flex justify-between items-center text-xs text-blue-500">
+                    <span>Less EWT (1%):</span>
+                    <span>
+                      -{formData.currency}{" "}
+                      {Number(formData.ewtAmount).toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center text-md">
                   <span className="text-gray-600">Shipping Cost:</span>
                   <div className="flex items-center">
@@ -865,8 +1090,6 @@ const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
           >
             Cancel
           </button>
-
-          {/* SAVE BUTTON */}
           <button
             type="button"
             onClick={handleSave}

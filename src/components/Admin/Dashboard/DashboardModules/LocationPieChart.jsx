@@ -1,63 +1,48 @@
 import React, { useEffect, useState } from "react";
-import { PieChart, Pie, Cell, Legend } from "recharts";
+import { PieChart, Pie, Cell, Legend, Tooltip } from "recharts";
 import axios from "axios";
 import Loader from "../../../loader/Loader";
 import ChartWrapper from "./ChartWrapper";
 import { domain } from "../../../../security";
 
-const COLORS = ["#00C49F", "#FFBB28", "#FF8042", "#0088FE", "#FF66C4"];
+const COLORS = [
+  "#00C49F",
+  "#FFBB28",
+  "#FF8042",
+  "#0088FE",
+  "#FF66C4",
+  "#8884d8",
+];
 
 const LocationPieChart = () => {
   const [locationData, setLocationData] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const currentMonth = new Date().toISOString().slice(0, 7); // "2025-04"
-
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const response = await axios.get(`${domain}/api/Transactions`);
-        const transactions = response.data;
+        const today = new Date();
+        const month = today.getMonth() + 1;
+        const year = today.getFullYear();
 
-        const thisMonthData = transactions.filter((tx) =>
-          tx.date.startsWith(currentMonth)
+        const response = await axios.get(
+          `${domain}/api/Transactions/chart/sales-by-location?month=${month}&year=${year}`
         );
 
-        const locationMap = {};
-
-        thisMonthData.forEach((tx) => {
-          const location = tx.location?.trim() || "Unknown";
-          tx.purchasedProducts?.forEach((product) => {
-            const key = `${location}-${product.productName}`;
-            locationMap[key] = (locationMap[key] || 0) + product.quantity;
-          });
-        });
-
-        const aggregated = {};
-
-        for (const key in locationMap) {
-          const [location, productName] = key.split("-");
-          aggregated[location] = (aggregated[location] || 0) + locationMap[key];
-        }
-
-        const chartData = Object.entries(aggregated).map(([name, value]) => ({
-          name,
-          value,
-        }));
-
-        setLocationData(chartData);
+        setLocationData(response.data);
       } catch (error) {
-        console.error("Error fetching transactions:", error);
+        console.error("Error fetching chart data:", error);
       } finally {
         setLoading(false);
       }
     };
 
     fetchData();
-  }, [currentMonth]);
+  }, []);
 
   if (loading) return <Loader />;
 
+  // Render labels only if the slice is visible
   const renderLabel = ({
     cx,
     cy,
@@ -70,11 +55,15 @@ const LocationPieChart = () => {
     const x = cx + radius * Math.cos((-midAngle * Math.PI) / 180);
     const y = cy + radius * Math.sin((-midAngle * Math.PI) / 180);
 
+    if (percent === 0) return null;
+
     return (
       <text
         x={x}
         y={y}
         fill="white"
+        fontSize={12}
+        fontWeight="bold"
         textAnchor="middle"
         dominantBaseline="central"
       >
@@ -84,23 +73,42 @@ const LocationPieChart = () => {
   };
 
   return (
-    <ChartWrapper>
-      <PieChart width={400} height={300}>
+    <ChartWrapper title="Sales by Location">
+      <PieChart>
         <Pie
           data={locationData}
           cx="50%"
-          cy="45%"
+          cy="45%" // Slightly higher to make room for legend
           labelLine={false}
           label={renderLabel}
-          outerRadius={105}
+          innerRadius={40} // Added inner radius for a modern "Donut" look (optional, remove if unwanted)
+          outerRadius="80%" // Responsive radius
           fill="#8884d8"
           dataKey="value"
+          paddingAngle={2} // Adds slight gap between slices
         >
           {locationData.map((_, i) => (
             <Cell key={`cell-${i}`} fill={COLORS[i % COLORS.length]} />
           ))}
         </Pie>
-        <Legend layout="vertical" />
+        <Tooltip
+          formatter={(value) => [`₱${value.toLocaleString()}`, "Sales"]}
+          contentStyle={{
+            backgroundColor: "#222",
+            borderRadius: "8px",
+            border: "none",
+            color: "#fff",
+          }}
+          itemStyle={{ color: "#fff" }}
+        />
+        <Legend
+          layout="horizontal"
+          verticalAlign="bottom"
+          align="center"
+          iconType="circle"
+          iconSize={8}
+          wrapperStyle={{ fontSize: "12px", paddingTop: "10px" }}
+        />
       </PieChart>
     </ChartWrapper>
   );

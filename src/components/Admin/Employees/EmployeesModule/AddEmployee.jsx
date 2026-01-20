@@ -528,7 +528,7 @@ const AddEmployee = ({ onClose, refreshData, employeeToEdit }) => {
   );
 
   return (
-    <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl flex flex-col max-h-[90vh]">
+    <div className="bg-white rounded-lg shadow-xl w-full  flex flex-col max-h-[90vh]">
       {isLoading && <Loader />}
       {/* Modal Header */}
       <div className="p-6 border-b border-gray-200">

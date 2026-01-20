@@ -203,6 +203,7 @@ const Admin = () => {
             permissionKey: "userRestriction",
           },
           { title: "Employees", path: "employees", permissionKey: "employees" },
+          { title: "Approvers", path: "approvers", permissionKey: "employees" },
         ],
       },
       {

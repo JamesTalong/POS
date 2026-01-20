@@ -242,7 +242,6 @@ const AllBatches = () => {
                     {currentItems.length > 0 ? (
                       currentItems.map((batch) => {
                         // 1. Log the individual item here
-                        console.log("Current Batch Item:", batch);
 
                         // FIX: Added 'return (' here so the JSX is rendered
                         return (

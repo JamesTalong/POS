@@ -15,6 +15,7 @@ const AddVendor = ({ onClose, refreshData, vendorToEdit }) => {
     vendorStatus: "Active",
     tin: "",
     ewt: false,
+    priceType: "", // Added to state
     cor: null,
   });
 
@@ -25,7 +26,7 @@ const AddVendor = ({ onClose, refreshData, vendorToEdit }) => {
   useEffect(() => {
     const initForm = async () => {
       if (vendorToEdit) {
-        // 1. Populate basic text fields immediately from the prop (for speed)
+        // 1. Populate basic text fields
         setFormData({
           vendorName: vendorToEdit.vendorName || "",
           contactPerson: vendorToEdit.contactPerson || "",
@@ -35,12 +36,12 @@ const AddVendor = ({ onClose, refreshData, vendorToEdit }) => {
           specialization: vendorToEdit.specialization || "",
           vendorStatus: vendorToEdit.vendorStatus || "Active",
           tin: vendorToEdit.tin || "",
-          ewt: vendorToEdit.ewt === true, // Ensure boolean
-          cor: null, // Reset upload data
+          ewt: vendorToEdit.ewt === true,
+          priceType: vendorToEdit.priceType || "", // Populate from edit data
+          cor: null,
         });
 
-        // 2. Fetch the FULL details (specifically the COR image) from the backend
-        // because the List View API excluded it.
+        // 2. Fetch the FULL details
         try {
           setIsFetchingImage(true);
           const response = await axios.get(
@@ -48,21 +49,21 @@ const AddVendor = ({ onClose, refreshData, vendorToEdit }) => {
           );
           const fullData = response.data;
 
-          // Check if the backend returned the COR byte array (usually comes as base64 string in JSON)
-          // Note: JSON serialization might make it 'cor' or 'COR' depending on config.
+          // Ensure priceType is updated if it wasn't in the list view prop
+          setFormData((prev) => ({
+            ...prev,
+            priceType: fullData.priceType || fullData.PriceType || "",
+          }));
+
           const backendImage = fullData.cor || fullData.COR;
 
           if (backendImage) {
-            // Construct the Data URL for preview
-            // Assuming standard image formats (png/jpeg).
-            // If your byte array doesn't have headers, we append the prefix.
             setImagePreview(`data:image/png;base64,${backendImage}`);
           } else {
             setImagePreview(null);
           }
         } catch (error) {
           console.error("Error fetching vendor image details:", error);
-          // We don't toast here to avoid annoying the user if it's just a missing image
         } finally {
           setIsFetchingImage(false);
         }
@@ -78,6 +79,7 @@ const AddVendor = ({ onClose, refreshData, vendorToEdit }) => {
           vendorStatus: "Active",
           tin: "",
           ewt: false,
+          priceType: "", // Reset
           cor: null,
         });
         setImagePreview(null);
@@ -104,7 +106,6 @@ const AddVendor = ({ onClose, refreshData, vendorToEdit }) => {
 
       try {
         const base64 = await convertToBase64(file);
-        // Remove header "data:image/xxx;base64," so we only send raw bytes/string to C#
         const base64String = base64.split(",")[1];
         setFormData({ ...formData, cor: base64String });
       } catch (error) {
@@ -131,11 +132,9 @@ const AddVendor = ({ onClose, refreshData, vendorToEdit }) => {
 
     try {
       if (vendorToEdit) {
-        // PUT Request
         await axios.put(`${apiUrl}/${vendorToEdit.id}`, formData);
         toast.success("Vendor updated successfully");
       } else {
-        // POST Request
         await axios.post(apiUrl, formData);
         toast.success("Vendor added successfully");
       }
@@ -290,6 +289,32 @@ const AddVendor = ({ onClose, refreshData, vendorToEdit }) => {
                 </select>
               </div>
 
+              {/* Price Type (New Field) */}
+              <div>
+                <label htmlFor="priceType" className={labelStyle}>
+                  Price Type <span className="text-red-500">*</span>
+                </label>
+                <select
+                  id="priceType"
+                  className={`mt-1 border rounded-md px-3 py-2 text-sm w-full focus:outline-none focus:ring-1 focus:ring-gray-900 transition duration-200 bg-white shadow-sm ${
+                    !formData.priceType
+                      ? "border-amber-300 text-amber-700"
+                      : "border-gray-300 text-gray-700"
+                  }`}
+                  value={formData.priceType}
+                  onChange={handleInputChange}
+                  required
+                >
+                  <option value="" disabled>
+                    Select Price Type
+                  </option>
+                  <option value="vatEx">VAT Exclusive</option>
+                  <option value="vatInc">VAT Inclusive</option>
+                  <option value="reseller">Reseller</option>
+                  <option value="zeroRated">Zero Rated</option>
+                </select>
+              </div>
+
               {/* TIN */}
               <div>
                 <label htmlFor="tin" className={labelStyle}>
@@ -369,7 +394,7 @@ const AddVendor = ({ onClose, refreshData, vendorToEdit }) => {
                 ></textarea>
               </div>
 
-              {/* COR Image Upload Section */}
+              {/* COR Image Upload Section (Existing Code) */}
               <div className="md:col-span-2 border-t border-gray-200 pt-6">
                 <label className="block text-lg font-bold text-gray-800 mb-2">
                   Certificate of Registration (COR)
@@ -379,7 +404,6 @@ const AddVendor = ({ onClose, refreshData, vendorToEdit }) => {
                   Registration.
                 </p>
 
-                {/* Loading state for Image Fetching */}
                 {isFetchingImage ? (
                   <div className="flex items-center justify-center h-48 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
                     <div className="flex flex-col items-center">
@@ -390,7 +414,6 @@ const AddVendor = ({ onClose, refreshData, vendorToEdit }) => {
                     </div>
                   </div>
                 ) : imagePreview ? (
-                  // Preview Mode with View/Change
                   <div className="flex flex-col items-center justify-center p-6 border-2 border-orange-200 border-dashed rounded-lg bg-orange-50/50">
                     <div
                       className="relative w-full max-w-md h-64 cursor-zoom-in group overflow-hidden rounded-lg shadow-lg bg-white"
@@ -404,26 +427,6 @@ const AddVendor = ({ onClose, refreshData, vendorToEdit }) => {
                       />
                       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-300 flex items-center justify-center">
                         <div className="opacity-0 group-hover:opacity-100 transform translate-y-2 group-hover:translate-y-0 transition-all duration-300 bg-black/75 text-white text-sm font-medium px-4 py-2 rounded-full flex items-center gap-2">
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            className="h-4 w-4"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                            />
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                            />
-                          </svg>
                           View Full Image
                         </div>
                       </div>
@@ -446,35 +449,17 @@ const AddVendor = ({ onClose, refreshData, vendorToEdit }) => {
                     </div>
                   </div>
                 ) : (
-                  // Initial Upload Mode
                   <div className="flex items-center justify-center w-full">
                     <label
                       htmlFor="cor-upload"
                       className="flex flex-col items-center justify-center w-full h-48 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors group"
                     >
                       <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                        <svg
-                          className="w-10 h-10 mb-3 text-gray-400 group-hover:text-orange-500 transition-colors"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          xmlns="http://www.w3.org/2000/svg"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth="2"
-                            d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-                          ></path>
-                        </svg>
                         <p className="mb-2 text-sm text-gray-500">
                           <span className="font-bold text-gray-700">
                             Click to upload image
                           </span>{" "}
                           or drag and drop
-                        </p>
-                        <p className="text-xs text-gray-400">
-                          PNG, JPG, JPEG (Max 5MB)
                         </p>
                       </div>
                       <input
