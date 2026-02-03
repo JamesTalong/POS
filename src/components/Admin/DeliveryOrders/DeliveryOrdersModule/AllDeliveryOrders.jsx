@@ -1,46 +1,49 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState, useMemo } from "react";
+import { useSelector } from "react-redux";
+// UPDATE THIS PATH to match your actual Redux slice location
+import { selectUserID } from "../../../../redux/IchthusSlice";
 import { ToastContainer, toast } from "react-toastify";
 import axios from "axios";
 import {
   Truck,
   Search,
-  BarChart2,
   CheckCircle,
   XCircle,
   Package,
-  Trash2,
-  Ban,
   ChevronDown,
-  ChevronUp,
-  RotateCcw, // Added for item return icon
+  ChevronRight,
+  RotateCcw,
+  MapPin,
+  User,
+  Info,
+  AlertTriangle,
+  FileText,
+  Layers,
+  DollarSign,
 } from "lucide-react";
 
 import Loader from "../../../loader/Loader";
 import Pagination from "../../Pagination";
 import { domain } from "../../../../security";
 
-// Import your custom Modals
-import RevertTransactionModal from "../../Transactions/Modals/RevertTransactionModal";
-import RejectItemModal from "../../PurchaseOrder/PurchaseOrderModule/RejectItemModal";
-
-// Helper for Status Colors
+// --- Status Badges ---
 const getStatusBadge = (status) => {
   switch (status) {
     case "Sold":
       return (
-        <span className="bg-emerald-100 text-emerald-700 px-2 py-1 rounded text-xs font-bold flex items-center gap-1 w-fit">
-          <CheckCircle size={12} /> Sold
+        <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 w-fit uppercase border border-emerald-200">
+          <CheckCircle size={10} /> Sold
         </span>
       );
     case "Voided":
       return (
-        <span className="bg-red-100 text-red-700 px-2 py-1 rounded text-xs font-bold flex items-center gap-1 w-fit">
-          <XCircle size={12} /> Voided
+        <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 w-fit uppercase border border-red-200">
+          <XCircle size={10} /> Voided
         </span>
       );
     default:
       return (
-        <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-bold w-fit">
+        <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded text-[10px] font-bold w-fit uppercase border border-gray-200">
           {status}
         </span>
       );
@@ -48,27 +51,21 @@ const getStatusBadge = (status) => {
 };
 
 const AllDeliveryOrders = () => {
+  // 1. GET CURRENT USER ID FROM REDUX
+  const currentUserId = useSelector(selectUserID);
+
   const [doData, setDoData] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Pagination & Search
+  // Filters
+  const [activeTab, setActiveTab] = useState("Sold");
+  const [selectedLocation, setSelectedLocation] = useState("All");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
   const [searchTerm, setSearchTerm] = useState("");
-  const [filteredDOs, setFilteredDOs] = useState([]);
 
-  // Detail View State
+  // UI State
   const [expandedRow, setExpandedRow] = useState(null);
-
-  // --- MODAL STATES ---
-  const [isRevertModalOpen, setIsRevertModalOpen] = useState(false);
-  const [selectedDOToRevert, setSelectedDOToRevert] = useState(null);
-
-  // Reject Item Modal States (Modal Chaining)
-  const [isRejectItemModalOpen, setIsRejectItemModalOpen] = useState(false);
-  const [selectedItemToReject, setSelectedItemToReject] = useState(null);
-  const [pendingRejectData, setPendingRejectData] = useState(null); // Stores data from Modal 1
-  const [isProcessingSingleItem, setIsProcessingSingleItem] = useState(false);
 
   // Fetch Data
   const fetchData = useCallback(async () => {
@@ -77,7 +74,6 @@ const AllDeliveryOrders = () => {
       setDoData(response.data);
       setLoading(false);
     } catch (error) {
-      console.error("Error fetching DOs:", error);
       toast.error("Failed to fetch Delivery Orders.");
       setLoading(false);
     }
@@ -87,153 +83,52 @@ const AllDeliveryOrders = () => {
     fetchData();
   }, [fetchData]);
 
-  // Filtering
-  useEffect(() => {
-    const results = doData.filter(
-      (item) =>
+  // --- Filtering Logic ---
+  const filteredDOs = useMemo(() => {
+    return doData.filter((item) => {
+      // Search
+      const matchesSearch =
         item.deliveryOrderNumber
           .toLowerCase()
           .includes(searchTerm.toLowerCase()) ||
-        item.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.status?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-    setFilteredDOs(results);
-    setCurrentPage(1);
-  }, [searchTerm, doData]);
+        item.salesOrderNumber
+          ?.toLowerCase()
+          .includes(searchTerm.toLowerCase()) ||
+        item.customerName?.toLowerCase().includes(searchTerm.toLowerCase());
 
-  // --- ACTIONS ---
+      // Location
+      const matchesLoc =
+        selectedLocation === "All" || item.locationName === selectedLocation;
 
-  // 1. FULL DO VOID (Standard logic)
-  const openRevertModal = (item) => {
-    if (item.isVoid) {
-      toast.info("This DO is already voided.");
-      return;
-    }
-    setIsProcessingSingleItem(false); // Flag that we are doing the WHOLE order
-    setSelectedDOToRevert(item);
-    setIsRevertModalOpen(true);
-  };
+      // Tabs
+      let matchesTab = true;
+      if (activeTab === "Sold") matchesTab = !item.isVoid;
+      else if (activeTab === "Voided") matchesTab = item.isVoid;
 
-  // 2. SPECIFIC ITEM RETURN (Start Chain)
-  const openRejectItemModal = (parentDO, product) => {
-    if (parentDO.isVoid) return;
-    setIsProcessingSingleItem(true); // Flag that we are doing a SINGLE item
-    setSelectedItemToReject({ ...product, deliveryOrderId: parentDO.id });
-    setIsRejectItemModalOpen(true);
-  };
-
-  // 3. HANDLE SUBMIT FROM REJECTITEMMODAL (Chain Modal 1 to Modal 2)
-  const handleRejectItemSubmit = (qty, reason, imageBase64) => {
-    // Save data from first modal
-    setPendingRejectData({
-      quantity: qty,
-      reason: reason,
-      image: imageBase64,
+      return matchesSearch && matchesLoc && matchesTab;
     });
+  }, [searchTerm, doData, selectedLocation, activeTab]);
 
-    // Close Modal 1, Open Modal 2 (RevertTransactionModal)
-    setIsRejectItemModalOpen(false);
-    setIsRevertModalOpen(true);
-  };
-
-  // 4. FINAL CONFIRM REVERT (API Call)
-  const handleConfirmRevert = async (id, returnCondition) => {
-    try {
-      if (isProcessingSingleItem) {
-        // --- FIX STARTS HERE ---
-        let finalImageString = null;
-
-        if (pendingRejectData.image) {
-          const parts = pendingRejectData.image.split(",");
-          finalImageString =
-            parts.length > 1 ? parts[1] : pendingRejectData.image;
-        }
-
-        // 2. Create Payload with correct key names
-        const payload = {
-          deliveryOrderId: selectedItemToReject.deliveryOrderId,
-          productId: selectedItemToReject.productId,
-          quantity: pendingRejectData.quantity,
-          reason: pendingRejectData.reason,
-          imageBase64: finalImageString,
-          returnCondition: returnCondition,
-          voidBy: "Admin",
-        };
-
-        // --- FIX ENDS HERE ---
-        await axios.post(`${domain}/api/DeliveryOrders/revert-item`, payload);
-        toast.success("Item returned successfully.");
-      } else {
-        // API Call for Full DO Revert
-        const payload = {
-          returnCondition: returnCondition,
-          voidBy: "Admin",
-        };
-        await axios.post(`${domain}/api/DeliveryOrders/revert/${id}`, payload);
-        toast.success("DO Reverted Successfully.");
-      }
-
-      fetchData();
-      setPendingRejectData(null);
-    } catch (error) {
-      console.error("Return Error:", error); // Added console log for easier debugging
-      toast.error(error.response?.data?.message || "Failed to process return.");
-    }
-  };
-
-  // 5. DELETE (Permanent)
-  const handleDelete = async (id) => {
-    if (!window.confirm("Permanently delete this Delivery Order record?"))
-      return;
-    try {
-      await axios.delete(`${domain}/api/DeliveryOrders/${id}`);
-      toast.success("Record Deleted.");
-      fetchData();
-    } catch (error) {
-      toast.error("Delete failed.");
-    }
-  };
-
-  // Pagination Logic
-  const currentItems = filteredDOs.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  const tabs = [
+    { id: "Sold", label: "Settled Orders", icon: DollarSign },
+    { id: "Voided", label: "Voided / Returns", icon: RotateCcw },
+    { id: "All", label: "All Transactions", icon: Layers },
+  ];
 
   return (
-    <div className="min-h-screen pb-12 relative bg-slate-50">
-      <ToastContainer position="top-right" autoClose={3000} />
+    <div className="min-h-screen bg-slate-50 pb-12 relative">
+      <ToastContainer autoClose={2000} position="top-right" />
 
-      {/* Modal 1: Generic Reject Modal (Quantity, Reason, Image) */}
-      <RejectItemModal
-        isOpen={isRejectItemModalOpen}
-        onClose={() => setIsRejectItemModalOpen(false)}
-        onSubmit={handleRejectItemSubmit}
-        lineItem={selectedItemToReject}
-      />
-
-      {/* Modal 2: Condition Modal (Return Good/Bad) */}
-      <RevertTransactionModal
-        isOpen={isRevertModalOpen}
-        onClose={() => setIsRevertModalOpen(false)}
-        onConfirm={handleConfirmRevert}
-        transactionId={
-          isProcessingSingleItem
-            ? selectedItemToReject?.deliveryOrderId
-            : selectedDOToRevert?.id
-        }
-      />
-
-      {/* Header */}
+      {/* --- HEADER --- */}
       <div className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-20">
         <div className="max-w-[95%] mx-auto px-4 py-4">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="flex justify-between items-center">
             <div>
               <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                <Truck className="text-emerald-600" /> Delivery Orders (Sold)
+                <Truck className="text-emerald-600" /> Delivery Orders
               </h1>
-              <p className="text-sm text-slate-500 mt-1">
-                Track sold items and manage inventory returns.
+              <p className="text-xs text-slate-400 font-mono mt-1">
+                Logged in as ID: {currentUserId}
               </p>
             </div>
           </div>
@@ -241,204 +136,340 @@ const AllDeliveryOrders = () => {
       </div>
 
       <div className="max-w-[95%] mx-auto px-4 mt-6">
-        {/* Stats Section */}
+        {/* --- STATS CARDS --- */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4">
             <div className="p-3 bg-emerald-50 text-emerald-600 rounded-lg">
-              <Package />
+              <CheckCircle />
             </div>
             <div>
-              <p className="text-sm text-slate-500">Total DOs</p>
+              <p className="text-xs text-slate-500 font-bold uppercase">
+                Settled Count
+              </p>
               <p className="text-2xl font-bold text-slate-800">
-                {doData.length}
+                {doData.filter((x) => !x.isVoid).length}
               </p>
             </div>
           </div>
           <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4">
-            <div className="p-3 bg-blue-50 text-blue-600 rounded-lg">
-              <BarChart2 />
+            <div className="p-3 bg-indigo-50 text-indigo-600 rounded-lg">
+              <DollarSign />
             </div>
             <div>
-              <p className="text-sm text-slate-500">Value Sold</p>
+              <p className="text-xs text-slate-500 font-bold uppercase">
+                Total Net Value
+              </p>
               <p className="text-2xl font-bold text-slate-800">
                 ₱
                 {doData
                   .filter((x) => !x.isVoid)
-                  .reduce((acc, curr) => acc + curr.totalAmount, 0)
+                  .reduce((a, b) => a + b.totalAmount, 0)
                   .toLocaleString()}
+              </p>
+            </div>
+          </div>
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4">
+            <div className="p-3 bg-red-50 text-red-600 rounded-lg">
+              <XCircle />
+            </div>
+            <div>
+              <p className="text-xs text-slate-500 font-bold uppercase">
+                Voided/Returned
+              </p>
+              <p className="text-2xl font-bold text-slate-800">
+                {doData.filter((x) => x.isVoid).length}
               </p>
             </div>
           </div>
         </div>
 
-        {/* Search */}
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6">
-          <div className="relative">
+        {/* --- TAB NAVIGATION --- */}
+        <div className="flex flex-wrap items-center gap-2 bg-slate-200/50 p-1.5 rounded-xl w-fit border border-slate-200 mb-6">
+          {tabs.map((tab) => {
+            const isActive = activeTab === tab.id;
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  setCurrentPage(1);
+                }}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                  isActive
+                    ? "bg-white text-emerald-700 shadow-sm ring-1 ring-black/5"
+                    : "text-slate-600 hover:bg-white/50"
+                }`}
+              >
+                <Icon
+                  size={16}
+                  className={isActive ? "text-emerald-600" : "text-slate-400"}
+                />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* --- SEARCH & LOCATION FILTER --- */}
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6 flex flex-col md:flex-row gap-4">
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Search by DO #, Customer, or Status..."
-              className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500"
+              placeholder="Search DO #, Sales Order #, or Customer..."
+              className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-emerald-500 text-sm"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+          <div className="relative min-w-[220px]">
+            <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <select
+              value={selectedLocation}
+              onChange={(e) => setSelectedLocation(e.target.value)}
+              className="w-full pl-9 pr-10 py-2 border border-slate-300 rounded-lg bg-white text-sm font-bold text-slate-700"
+            >
+              <option value="All">All Locations</option>
+              {[...new Set(doData.map((d) => d.locationName))]
+                .filter(Boolean)
+                .map((loc) => (
+                  <option key={loc} value={loc}>
+                    {loc}
+                  </option>
+                ))}
+            </select>
+          </div>
         </div>
 
-        {/* Table */}
         {loading ? (
-          <div className="flex justify-center py-20">
-            <Loader />
-          </div>
+          <Loader />
         ) : (
           <>
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
               <table className="w-full text-sm text-left">
-                <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b">
+                <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase text-slate-500 tracking-widest">
                   <tr>
                     <th className="px-6 py-4 w-10"></th>
-                    <th className="px-6 py-4">DO Number</th>
-                    <th className="px-6 py-4">Date</th>
-                    <th className="px-6 py-4">Customer</th>
-                    <th className="px-6 py-4 text-right">Amount</th>
+                    <th className="px-6 py-4">Delivery Order</th>
+                    <th className="px-6 py-4">Location & Customer</th>
+                    <th className="px-6 py-4 text-right">Settlement</th>
                     <th className="px-6 py-4 text-center">Status</th>
-                    <th className="px-6 py-4 text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {currentItems.map((item) => (
-                    <React.Fragment key={item.id}>
-                      <tr
-                        className={`hover:bg-slate-50 transition ${
-                          item.isVoid ? "bg-red-50/30" : ""
-                        }`}
-                      >
-                        <td className="px-6 py-4">
-                          <button
-                            onClick={() =>
-                              setExpandedRow(
-                                expandedRow === item.id ? null : item.id
-                              )
-                            }
-                            className="text-slate-400 hover:text-emerald-600"
-                          >
+                  {filteredDOs
+                    .slice(
+                      (currentPage - 1) * itemsPerPage,
+                      currentPage * itemsPerPage,
+                    )
+                    .map((item) => (
+                      <React.Fragment key={item.id}>
+                        <tr
+                          onClick={() =>
+                            setExpandedRow(
+                              expandedRow === item.id ? null : item.id,
+                            )
+                          }
+                          className={`hover:bg-slate-50 cursor-pointer transition-colors ${item.isVoid ? "bg-red-50/20" : ""}`}
+                        >
+                          <td className="px-6 py-4 text-slate-400">
                             {expandedRow === item.id ? (
-                              <ChevronUp size={18} />
-                            ) : (
                               <ChevronDown size={18} />
-                            )}
-                          </button>
-                        </td>
-                        <td className="px-6 py-4 font-bold text-slate-800">
-                          {item.deliveryOrderNumber}
-                        </td>
-                        <td className="px-6 py-4">
-                          {new Date(item.date).toLocaleDateString()}
-                        </td>
-                        <td className="px-6 py-4">{item.customerName}</td>
-                        <td className="px-6 py-4 text-right font-mono font-bold">
-                          ₱{item.totalAmount.toLocaleString()}
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <div className="flex justify-center">
-                            {getStatusBadge(item.status)}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <div className="flex items-center justify-center gap-4">
-                            {!item.isVoid ? (
-                              <button
-                                onClick={() => openRevertModal(item)}
-                                className="text-slate-400 hover:text-orange-600"
-                                title="Revert / Void (Whole DO)"
-                              >
-                                <Ban size={18} />
-                              </button>
                             ) : (
-                              <span className="text-[10px] text-red-400 font-black uppercase">
-                                Voided
-                              </span>
+                              <ChevronRight size={18} />
                             )}
-                            <button
-                              onClick={() => handleDelete(item.id)}
-                              className="text-slate-400 hover:text-red-600"
-                              title="Delete Record"
-                            >
-                              <Trash2 size={18} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-
-                      {/* Expanded Details Row */}
-                      {expandedRow === item.id && (
-                        <tr className="bg-slate-50/50">
-                          <td colSpan="7" className="px-12 py-4">
-                            <div className="border-l-4 border-emerald-500 bg-white p-4 rounded shadow-inner">
-                              <h4 className="font-bold text-slate-700 mb-3 flex items-center gap-2">
-                                <Package size={16} /> Items Delivered (SOLD)
-                              </h4>
-                              <table className="w-full text-xs">
-                                <thead className="text-slate-400 border-b">
-                                  <tr>
-                                    <th className="py-2 text-left">Product</th>
-                                    <th className="py-2 text-center">Qty</th>
-                                    <th className="py-2 text-right">Price</th>
-                                    <th className="py-2 text-right">Total</th>
-                                    <th className="py-2 text-center">Action</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {item.deliveryOrderItems?.map((prod) => (
-                                    <tr
-                                      key={prod.id}
-                                      className="border-b border-slate-50 last:border-0"
-                                    >
-                                      <td className="py-2 font-medium">
-                                        {prod.productName}
-                                      </td>
-                                      <td className="py-2 text-center">
-                                        {prod.quantity}
-                                      </td>
-                                      <td className="py-2 text-right">
-                                        ₱{prod.unitPrice.toLocaleString()}
-                                      </td>
-                                      <td className="py-2 text-right font-bold">
-                                        ₱{prod.lineTotal.toLocaleString()}
-                                      </td>
-                                      <td className="py-2 text-center">
-                                        {!item.isVoid &&
-                                          prod.quantity > 0 && ( // FIX 2: Only show button if Qty > 0
-                                            <button
-                                              onClick={() =>
-                                                openRejectItemModal(item, prod)
-                                              }
-                                              className="flex items-center gap-1 mx-auto bg-orange-50 text-orange-600 px-2 py-1 rounded hover:bg-orange-100 transition shadow-sm border border-orange-200"
-                                              title="Return this specific item"
-                                            >
-                                              <RotateCcw size={12} /> Return
-                                            </button>
-                                          )}
-                                        {prod.quantity === 0 && (
-                                          <span className="text-xs text-red-400 font-bold">
-                                            Returned
-                                          </span>
-                                        )}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="font-bold text-slate-800">
+                              {item.deliveryOrderNumber}
+                            </div>
+                            {/* NEW: Show SO and Quote Numbers */}
+                            <div className="flex gap-2 mt-1">
+                              <span className="text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-bold uppercase border border-blue-100">
+                                SO: {item.salesOrderNumber}
+                              </span>
+                              <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold uppercase border border-slate-200">
+                                SQ: {item.quoteNumber}
+                              </span>
                             </div>
                           </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-1.5 font-bold text-slate-700 text-sm">
+                              <User size={14} className="text-slate-400" />{" "}
+                              {item.customerName}
+                            </div>
+                            <div className="flex items-center gap-1.5 text-indigo-500 font-bold text-[10px] uppercase mt-1">
+                              <MapPin size={12} /> {item.locationName}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <div className="font-black text-slate-900 text-base">
+                              ₱{item.totalAmount.toLocaleString()}
+                            </div>
+                            {item.hasVat && (
+                              <div className="text-[8px] font-black text-emerald-500 uppercase">
+                                VAT Applied
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            {getStatusBadge(item.isVoid ? "Voided" : "Sold")}
+                          </td>
                         </tr>
-                      )}
-                    </React.Fragment>
-                  ))}
+
+                        {/* --- EXPANDED VIEW --- */}
+                        {expandedRow === item.id && (
+                          <tr className="bg-slate-50">
+                            <td colSpan="5" className="px-10 py-6">
+                              <div className="border-l-4 border-emerald-500 bg-white p-6 rounded shadow-sm grid grid-cols-1 lg:grid-cols-3 gap-8">
+                                {/* 1. Item Breakdown Table */}
+                                <div className="lg:col-span-2 space-y-4">
+                                  <h4 className="text-xs font-black uppercase text-slate-400 flex items-center gap-2">
+                                    <Package size={16} /> Fulfillment Details
+                                  </h4>
+                                  <div className="overflow-hidden rounded-lg border border-slate-100">
+                                    <table className="w-full text-xs">
+                                      <thead className="bg-slate-50 text-slate-400 uppercase font-black">
+                                        <tr>
+                                          <th className="p-3 text-left">
+                                            Product
+                                          </th>
+                                          <th className="p-3 text-center">
+                                            Expected
+                                          </th>
+                                          <th className="p-3 text-center">
+                                            Returned
+                                          </th>
+                                          <th className="p-3 text-center text-emerald-600">
+                                            Net Received
+                                          </th>
+                                          <th className="p-3 text-right">
+                                            Price
+                                          </th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-50">
+                                        {item.deliveryOrderItems.map((prod) => (
+                                          <tr
+                                            key={prod.id}
+                                            className="hover:bg-slate-50/50"
+                                          >
+                                            <td className="p-3 font-bold text-slate-700">
+                                              {prod.productName}
+                                              <p className="text-[9px] text-slate-400 font-black uppercase">
+                                                {prod.priceType || "Standard"}
+                                              </p>
+                                            </td>
+                                            {/* Data from JOIN in Controller */}
+                                            <td className="p-3 text-center font-medium">
+                                              {prod.quantityExpected}
+                                            </td>
+                                            <td className="p-3 text-center font-bold text-red-500">
+                                              {prod.quantityExpected -
+                                                prod.quantityReceived}
+                                            </td>
+                                            <td className="p-3 text-center font-black text-emerald-700 bg-emerald-50/30">
+                                              {prod.quantityReceived}
+                                            </td>
+                                            <td className="p-3 text-right font-bold">
+                                              ₱{prod.unitPrice.toLocaleString()}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+
+                                {/* 2. Financial Summary Card */}
+                                <div className="bg-slate-50/50 rounded-xl border border-slate-200 p-5 space-y-5">
+                                  <h4 className="text-xs font-black uppercase text-slate-400 border-b pb-2 flex items-center gap-2">
+                                    <FileText size={16} /> Settlement Card
+                                  </h4>
+                                  <div className="space-y-3">
+                                    <div className="flex justify-between text-sm">
+                                      <span className="text-slate-500 font-medium">
+                                        Net Subtotal
+                                      </span>
+                                      <span className="font-black text-slate-800">
+                                        ₱{item.totalAmount.toLocaleString()}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                      <span className="text-slate-500 font-medium">
+                                        Shipping Fee
+                                      </span>
+                                      <span className="font-black text-slate-800">
+                                        + ₱{item.shippingCost.toLocaleString()}
+                                      </span>
+                                    </div>
+                                    {item.hasVat && (
+                                      <div className="flex justify-between text-[11px] bg-emerald-50 p-2 rounded-lg text-emerald-700 font-bold">
+                                        <span className="flex items-center gap-1">
+                                          <Info size={12} /> VAT
+                                        </span>
+                                        <span>
+                                          ₱{item.vatAmount.toLocaleString()}
+                                        </span>
+                                      </div>
+                                    )}
+                                    {item.hasEwt && (
+                                      <div className="flex justify-between text-[11px] bg-orange-50 p-2 rounded-lg text-orange-700 font-bold">
+                                        <span className="flex items-center gap-1">
+                                          <Info size={12} /> EWT (1%)
+                                        </span>
+                                        <span>
+                                          - ₱{item.ewtAmount.toLocaleString()}
+                                        </span>
+                                      </div>
+                                    )}
+                                    <div className="pt-3 border-t border-dashed border-slate-300 flex justify-between items-center text-slate-900">
+                                      <span className="text-xs font-black uppercase text-slate-400 tracking-widest">
+                                        Grand Total
+                                      </span>
+                                      <span className="text-xl font-black">
+                                        ₱
+                                        {(
+                                          item.totalAmount +
+                                          item.shippingCost -
+                                          (item.hasEwt ? item.ewtAmount : 0)
+                                        ).toLocaleString()}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div className="bg-amber-50 p-3 rounded-lg border border-amber-200 flex gap-2">
+                                    <AlertTriangle
+                                      className="text-amber-600 flex-shrink-0"
+                                      size={16}
+                                    />
+                                    <p className="text-[10px] leading-relaxed text-amber-700 font-bold italic">
+                                      Warning: Returns will automatically adjust
+                                      these figures. Grand Total reflects
+                                      current net receivables.
+                                    </p>
+                                  </div>
+
+                                  <div className="space-y-1">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                      Audit Trail
+                                    </p>
+                                    <div className="bg-white p-2 border border-slate-200 rounded text-[10px] text-slate-500 font-medium italic break-words">
+                                      {item.remarks ||
+                                        "No history logs available."}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    ))}
                 </tbody>
               </table>
             </div>
-
             <div className="mt-6">
               <Pagination
                 itemsPerPage={itemsPerPage}

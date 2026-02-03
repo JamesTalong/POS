@@ -65,6 +65,12 @@ const Admin = () => {
         permissionKey: "dashboard",
       },
       {
+        title: "Playground",
+        path: "Playground",
+        Icon: FaChartBar,
+      },
+
+      {
         title: "Product Setup",
         Icon: FaBoxOpen,
         permissionKey: "productSetup",
@@ -152,6 +158,23 @@ const Admin = () => {
         ],
       },
       {
+        title: "Returns",
+        Icon: FaArchive,
+        permissionKey: "sales",
+        dropdown: [
+          {
+            title: "Delivery Returns",
+            path: "DeliveryReturns",
+            permissionKey: "deliveryOrders",
+          },
+          {
+            title: "Trade Returns",
+            path: "DeliveryOrders",
+            permissionKey: "deliveryOrders",
+          },
+        ],
+      },
+      {
         title: "Prices",
         Icon: FaArchive,
         permissionKey: "prices",
@@ -206,6 +229,7 @@ const Admin = () => {
           { title: "Approvers", path: "approvers", permissionKey: "employees" },
         ],
       },
+
       {
         title: "Back Tracking",
         Icon: FaArchive,
@@ -256,7 +280,7 @@ const Admin = () => {
       { title: "POS", path: "pos", Icon: FaCalculator, permissionKey: "pos" },
       { title: "Help & FAQ", path: "help-faq", Icon: FaQuestionCircle },
     ],
-    []
+    [],
   );
 
   // --- Effects ---
@@ -269,7 +293,9 @@ const Admin = () => {
   // Updated Effect: Included 'Menus' in dependency array
   useEffect(() => {
     const activeMenu = Menus.find((menu) =>
-      menu.dropdown?.some((subItem) => location.pathname.includes(subItem.path))
+      menu.dropdown?.some((subItem) =>
+        location.pathname.includes(subItem.path),
+      ),
     );
     if (activeMenu) {
       setOpenDropdown(activeMenu.title);
@@ -329,7 +355,7 @@ const Admin = () => {
       return menu.dropdown.some((subItem) =>
         subItem.permissionKey
           ? rolePermissions[subItem.permissionKey] === true
-          : true
+          : true,
       );
     }
     return rolePermissions[menu.permissionKey] === true;
@@ -354,8 +380,8 @@ const Admin = () => {
                 ? "w-72"
                 : "w-20"
               : mobileOpen
-              ? "w-72 translate-x-0"
-              : "w-72 -translate-x-full"
+                ? "w-72 translate-x-0"
+                : "w-72 -translate-x-full"
           }`}
       >
         {/* Toggle Button (Desktop Only) */}
@@ -438,8 +464,8 @@ const Admin = () => {
                       isDropdownOpen
                         ? "bg-indigo-600 text-white shadow-md"
                         : isActive && !menu.dropdown
-                        ? "bg-indigo-600 text-white shadow-md"
-                        : "hover:bg-slate-800 hover:text-white"
+                          ? "bg-indigo-600 text-white shadow-md"
+                          : "hover:bg-slate-800 hover:text-white"
                     }
                   `}
                 >
@@ -473,7 +499,7 @@ const Admin = () => {
                       .filter(
                         (sub) =>
                           !sub.permissionKey ||
-                          rolePermissions?.[sub.permissionKey] === true
+                          rolePermissions?.[sub.permissionKey] === true,
                       )
                       .map((subItem, subIndex) => (
                         <div
@@ -519,7 +545,7 @@ const Admin = () => {
 
       {/* Main Content Area */}
       <main
-        className="flex-grow p-6 h-full overflow-y-auto w-full transition-all duration-300 ease-in-out bg-gray-50/50 relative"
+        className="flex-grow p-6 h-full overflow-y-auto w-full transition-all duration-300 ease-in-out  relative"
         style={{ marginLeft: isDesktop ? (open ? "18rem" : "5rem") : "0" }}
       >
         {/* Sticky Mobile Header */}

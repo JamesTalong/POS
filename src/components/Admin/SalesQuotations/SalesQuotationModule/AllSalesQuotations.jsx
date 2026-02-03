@@ -1,4 +1,12 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+// src/components/YourModule/SalesQuotationModule/AllSalesQuotations.jsx
+
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useMemo,
+} from "react";
 import { ToastContainer, toast } from "react-toastify";
 import axios from "axios";
 import { useReactToPrint } from "react-to-print";
@@ -14,6 +22,9 @@ import {
   ShoppingCart,
   CheckCircle,
   AlertCircle,
+  MapPin,
+  ChevronDown,
+  Layers, // Added for 'All' tab icon
 } from "lucide-react";
 
 import Loader from "../../../loader/Loader";
@@ -23,7 +34,6 @@ import Pagination from "../../Pagination";
 import { domain } from "../../../../security";
 import SalesQuotationPrint from "../../POS/SalesQuotationPrint";
 
-// Helper to format currency
 const formatCurrency = (amount) => {
   return new Intl.NumberFormat("en-PH", {
     style: "currency",
@@ -31,15 +41,12 @@ const formatCurrency = (amount) => {
   }).format(amount);
 };
 
-// Helper to format date
 const formatDate = (dateString) => {
   return new Date(dateString).toLocaleDateString();
 };
 
-// --- COMPONENT: Status Badge ---
 const StatusBadge = ({ status }) => {
   const currentStatus = status || "Open";
-
   let styles = "bg-blue-100 text-blue-700";
   let icon = <FileText size={12} />;
 
@@ -53,16 +60,15 @@ const StatusBadge = ({ status }) => {
 
   return (
     <span
-      className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full font-bold uppercase ${styles}`}
+      className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${styles}`}
     >
       {icon} {currentStatus}
     </span>
   );
 };
 
-// --- COMPONENT: Mobile Card View ---
+// --- Updated Mobile Card View ---
 const QuotationCard = ({ quote, onCancel, onPrint, onConvertToOrder }) => {
-  // Logic: Lock actions specifically for Editing/Canceling, but NOT printing
   const isLocked = quote.status === "Converted" || quote.status === "Cancelled";
 
   return (
@@ -73,57 +79,58 @@ const QuotationCard = ({ quote, onCancel, onPrint, onConvertToOrder }) => {
             <FileText size={18} />
           </div>
           <div>
-            <span className="font-bold text-slate-800 text-lg block">
+            <span className="font-bold text-slate-800 text-base block">
               {quote.quoteNumber}
             </span>
-            <span className="text-xs text-slate-500 flex items-center gap-1">
-              <Calendar size={12} /> {formatDate(quote.date)}
+            <span className="text-xs text-indigo-600 flex items-center gap-1 font-medium">
+              <MapPin size={12} /> {quote.locationName || "N/A"}
             </span>
           </div>
         </div>
         <div className="flex flex-col items-end gap-1">
-          <span className="bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full font-bold">
-            {formatCurrency(quote.totalAmount)}
-          </span>
           <StatusBadge status={quote.status} />
+          <span className="text-xs text-slate-400 mt-1">
+            {formatDate(quote.date)}
+          </span>
         </div>
       </div>
 
-      <div className="mb-3 text-sm text-slate-600 space-y-1">
-        <div className="flex items-center gap-2">
+      <div className="mb-3 p-2 bg-slate-50 rounded border border-slate-100 space-y-1">
+        <div className="flex items-center gap-2 text-sm text-slate-600">
           <User size={14} className="text-slate-400" />
-          <span className="font-medium">
+          <span className="font-medium truncate">
             {quote.customer?.customerName || "Unknown Customer"}
           </span>
         </div>
+        <div className="flex items-center justify-between text-sm pt-1 border-t border-slate-200 mt-1">
+          <span className="text-slate-500 font-semibold">Total Value:</span>
+          <span className="font-bold text-green-700">
+            {formatCurrency(quote.totalAmount)}
+          </span>
+        </div>
       </div>
 
-      <div className="flex gap-2 pt-3 border-t border-slate-100 mt-2">
-        {/* Convert to Order Button - Keep Hidden if Locked */}
+      <div className="flex gap-2 pt-1">
         {!isLocked && (
           <button
             onClick={() => onConvertToOrder(quote)}
-            className="flex-1 py-2 border border-blue-100 text-blue-600 rounded hover:bg-blue-50 text-sm font-medium flex justify-center items-center gap-2"
+            className="flex-1 py-2 border border-blue-100 text-blue-600 rounded bg-blue-50/50 hover:bg-blue-50 text-xs font-bold flex justify-center items-center gap-1"
           >
-            <ShoppingCart size={16} /> Order
+            <ShoppingCart size={14} /> ORDER
           </button>
         )}
-
-        {/* Print Button - ALWAYS VISIBLE NOW */}
         <button
           onClick={() => onPrint(quote)}
-          className="flex-1 py-2 border border-orange-100 text-orange-600 rounded hover:bg-orange-50 text-sm font-medium flex justify-center items-center gap-2"
+          className="flex-1 py-2 border border-slate-200 text-slate-600 rounded bg-white hover:bg-slate-50 text-xs font-bold flex justify-center items-center gap-1"
         >
-          <Printer size={16} /> Print
+          <Printer size={14} /> PRINT
         </button>
-
-        {/* Cancel Button - Keep Hidden if Locked */}
         {!isLocked && (
           <button
             onClick={() => onCancel(quote.id)}
-            className="flex-1 py-2 border border-red-100 text-red-600 rounded hover:bg-red-50 text-sm font-medium flex justify-center items-center gap-2"
+            className="flex-1 py-2 border border-red-100 text-red-600 rounded bg-red-50/50 hover:bg-red-50 text-xs font-bold flex justify-center items-center gap-1"
           >
-            <XCircle size={16} /> Cancel
+            <XCircle size={14} /> CANCEL
           </button>
         )}
       </div>
@@ -131,22 +138,21 @@ const QuotationCard = ({ quote, onCancel, onPrint, onConvertToOrder }) => {
   );
 };
 
-// --- MAIN COMPONENT ---
 const AllSalesQuotations = () => {
   const [quotationData, setQuotationData] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Modal State
+  // --- 1. Filter States ---
+  const [selectedLocation, setSelectedLocation] = useState("");
+  const [activeTab, setActiveTab] = useState("Open"); // Added Tab State
+
   const [isOrderModalVisible, setIsOrderModalVisible] = useState(false);
   const [selectedQuoteForOrder, setSelectedQuoteForOrder] = useState(null);
 
-  // Pagination & Filter State
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
   const [searchTerm, setSearchTerm] = useState("");
-  const [filteredQuotes, setFilteredQuotes] = useState([]);
 
-  // Printing State
   const [quotePrintData, setQuotePrintData] = useState(null);
   const quotePrintRef = useRef();
 
@@ -156,30 +162,37 @@ const AllSalesQuotations = () => {
   });
 
   const handlePrintClick = (quote) => {
-    // REMOVED THE IF STATEMENT THAT BLOCKED PRINTING BASED ON STATUS
     setQuotePrintData(quote);
     setTimeout(() => {
       handlePrintAction();
     }, 200);
   };
 
-  const totalAmount = quotationData.reduce(
-    (sum, item) => sum + (item.totalAmount || 0),
-    0
-  );
+  // --- 2. Extract Unique Locations Logic ---
+  const locations = useMemo(() => {
+    const unique = [
+      ...new Set(quotationData.map((q) => q.locationName).filter(Boolean)),
+    ].sort();
+    return unique.length > 0 ? [...unique, "All"] : ["All"];
+  }, [quotationData]);
 
-  // --- API CALLS ---
+  // --- 3. Auto-select Default Location ---
+  useEffect(() => {
+    if (locations.length > 0 && selectedLocation === "") {
+      setSelectedLocation(locations[0] !== "All" ? locations[0] : "All");
+    }
+  }, [locations, selectedLocation]);
+
   const fetchData = useCallback(async () => {
+    setLoading(true);
     const apiUrl = `${domain}/api/SalesQuotations`;
     try {
-      const response = await axios.get(apiUrl, {
-        headers: { "Content-Type": "application/json" },
-      });
+      const response = await axios.get(apiUrl);
       setQuotationData(response.data);
-      setLoading(false);
     } catch (error) {
       console.error("Error fetching data:", error);
       toast.error("Failed to fetch Sales Quotations.");
+    } finally {
       setLoading(false);
     }
   }, []);
@@ -188,54 +201,61 @@ const AllSalesQuotations = () => {
     fetchData();
   }, [fetchData]);
 
-  useEffect(() => {
-    const results = quotationData.filter((q) => {
+  // --- 4. Updated Filter Logic (Search + Location + Tab) ---
+  const filteredQuotes = useMemo(() => {
+    return quotationData.filter((q) => {
+      // Search
       const searchLower = searchTerm.toLowerCase();
-      return (
+      const matchesSearch =
         q.quoteNumber?.toLowerCase().includes(searchLower) ||
         q.customer?.customerName?.toLowerCase().includes(searchLower) ||
-        q.fullName?.toLowerCase().includes(searchLower)
-      );
+        q.fullName?.toLowerCase().includes(searchLower);
+
+      // Location
+      const matchesLocation =
+        selectedLocation === "All" ||
+        q.locationName === selectedLocation ||
+        selectedLocation === "";
+
+      // Tab Status
+      // Note: Usually "Open" or null implies active/draft.
+      const currentStatus = q.status || "Open";
+      let matchesTab = true;
+
+      if (activeTab !== "All") {
+        matchesTab = currentStatus === activeTab;
+      }
+
+      return matchesSearch && matchesLocation && matchesTab;
     });
-    setFilteredQuotes(results);
-    setCurrentPage(1);
-  }, [searchTerm, quotationData]);
+  }, [searchTerm, quotationData, selectedLocation, activeTab]);
 
-  // --- CANCEL QUOTATION LOGIC ---
+  const totalAmount = filteredQuotes.reduce(
+    (sum, item) => sum + (item.totalAmount || 0),
+    0,
+  );
+
   const cancelQuotation = async (id) => {
-    const confirmMsg =
-      "Are you sure you want to CANCEL this quotation? This action cannot be undone.";
-    if (!window.confirm(confirmMsg)) {
+    if (!window.confirm("Are you sure you want to CANCEL this quotation?"))
       return;
-    }
-
-    const apiUrl = `${domain}/api/SalesQuotations/cancel/${id}`;
     try {
-      await axios.put(
-        apiUrl,
-        {},
-        {
-          headers: { "Content-Type": "application/json" },
-        }
-      );
+      await axios.put(`${domain}/api/SalesQuotations/cancel/${id}`, {});
       toast.success("Quotation Cancelled Successfully!");
       fetchData();
     } catch (error) {
-      console.error("Error cancelling quotation:", error);
       toast.error(
-        error.response?.data?.message || "Failed to cancel Quotation."
+        error.response?.data?.message || "Failed to cancel Quotation.",
       );
     }
   };
 
-  // --- OPEN ORDER MODAL LOGIC ---
   const openOrderModal = (quote) => {
     if (quote.status === "Converted") {
-      toast.info("This quotation has already been converted to an Order.");
+      toast.info("Already converted to Order.");
       return;
     }
     if (quote.status === "Cancelled") {
-      toast.error("Cannot process a Cancelled quotation.");
+      toast.error("Quotation is cancelled.");
       return;
     }
     setSelectedQuoteForOrder(quote);
@@ -247,17 +267,23 @@ const AllSalesQuotations = () => {
     setSelectedQuoteForOrder(null);
   };
 
-  // --- PAGINATION HELPERS ---
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentItems = filteredQuotes.slice(indexOfFirstItem, indexOfLastItem);
   const paginate = (pageNumber) => setCurrentPage(pageNumber);
 
+  // Define Tabs Configuration
+  const tabs = [
+    { id: "Open", label: "Open", icon: FileText },
+    { id: "Converted", label: "Converted", icon: CheckCircle },
+    { id: "Cancelled", label: "Cancelled", icon: AlertCircle },
+    { id: "All", label: "All Quotes", icon: Layers },
+  ];
+
   return (
     <div className="min-h-screen pb-12">
       <ToastContainer position="top-right" autoClose={3000} />
 
-      {/* PAGE HEADER */}
       <div className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-20">
         <div className="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -274,16 +300,18 @@ const AllSalesQuotations = () => {
       </div>
 
       <div className="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 mt-6">
-        {/* STATS CARDS */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+        {/* STATS */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4">
             <div className="p-3 bg-indigo-50 text-indigo-600 rounded-lg">
               <BarChart2 />
             </div>
             <div>
-              <p className="text-sm text-slate-500">Total Quotes</p>
+              <p className="text-xs text-slate-500 font-bold uppercase">
+                Filtered Quotes
+              </p>
               <p className="text-2xl font-bold text-slate-800">
-                {quotationData.length}
+                {filteredQuotes.length}
               </p>
             </div>
           </div>
@@ -292,7 +320,9 @@ const AllSalesQuotations = () => {
               <DollarSign />
             </div>
             <div>
-              <p className="text-sm text-slate-500">Total Value</p>
+              <p className="text-xs text-slate-500 font-bold uppercase">
+                Filtered Value
+              </p>
               <p className="text-2xl font-bold text-slate-800">
                 {formatCurrency(totalAmount)}
               </p>
@@ -300,36 +330,93 @@ const AllSalesQuotations = () => {
           </div>
         </div>
 
-        {/* SEARCH BAR */}
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 grid md:grid-cols-2 gap-4 mb-6">
-          <div className="relative md:col-span-2">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search by Quote # or Customer Name..."
-              className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition-shadow"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+        {/* --- TABS --- */}
+        <div className="mb-6">
+          <div className="flex flex-wrap items-center gap-2 bg-slate-100 p-1.5 rounded-xl w-fit">
+            {tabs.map((tab) => {
+              const isActive = activeTab === tab.id;
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    setCurrentPage(1); // Reset pagination on tab change
+                  }}
+                  className={`
+                    flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200
+                    ${
+                      isActive
+                        ? "bg-white text-indigo-700 shadow-sm ring-1 ring-black/5"
+                        : "text-slate-600 hover:bg-white/50 hover:text-slate-900"
+                    }
+                  `}
+                >
+                  <Icon
+                    size={16}
+                    className={isActive ? "text-indigo-600" : "text-slate-400"}
+                  />
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* LOADING STATE */}
+        {/* SEARCH & LOCATION FILTER */}
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6">
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search by Quote # or Customer..."
+                className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition-shadow text-sm"
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1);
+                }}
+              />
+            </div>
+
+            {/* --- Location Dropdown --- */}
+            <div className="relative min-w-[220px]">
+              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <select
+                value={selectedLocation}
+                onChange={(e) => {
+                  setSelectedLocation(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="w-full pl-9 pr-10 py-2 border border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 appearance-none bg-white text-sm text-slate-700 cursor-pointer transition-shadow"
+              >
+                {locations.map((loc) => (
+                  <option key={loc} value={loc}>
+                    {loc === "All" ? "All Locations" : loc}
+                  </option>
+                ))}
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                <ChevronDown size={16} />
+              </div>
+            </div>
+          </div>
+        </div>
+
         {loading ? (
           <div className="flex justify-center items-center py-20">
             <Loader />
           </div>
         ) : (
           <>
-            {/* DESKTOP TABLE */}
             <div className="hidden md:block bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
               <table className="w-full text-sm text-left text-slate-600">
                 <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200">
                   <tr>
                     <th className="px-6 py-4">Quote #</th>
-                    <th className="px-6 py-4">Date</th>
-                    <th className="px-6 py-4">Customer</th>
                     <th className="px-6 py-4">Location</th>
+                    <th className="px-6 py-4">Customer</th>
                     <th className="px-6 py-4">Status</th>
                     <th className="px-6 py-4 text-right">Total Amount</th>
                     <th className="px-6 py-4 text-right">Actions</th>
@@ -340,7 +427,6 @@ const AllSalesQuotations = () => {
                     const isLocked =
                       item.status === "Converted" ||
                       item.status === "Cancelled";
-
                     return (
                       <tr
                         key={item.id}
@@ -349,11 +435,14 @@ const AllSalesQuotations = () => {
                         <td className="px-6 py-4 font-semibold text-slate-800">
                           {item.quoteNumber}
                         </td>
-                        <td className="px-6 py-4">{formatDate(item.date)}</td>
+                        <td className="px-6 py-4">
+                          <span className="flex items-center gap-1.5 text-indigo-600 font-medium">
+                            <MapPin size={14} /> {item.locationName || "N/A"}
+                          </span>
+                        </td>
                         <td className="px-6 py-4">
                           {item.customer?.customerName}
                         </td>
-                        <td className="px-6 py-4">{item.locationName}</td>
                         <td className="px-6 py-4">
                           <StatusBadge status={item.status} />
                         </td>
@@ -362,32 +451,27 @@ const AllSalesQuotations = () => {
                         </td>
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-2">
-                            {/* Convert Button - Keep Locked logic */}
                             {!isLocked && (
                               <button
                                 onClick={() => openOrderModal(item)}
-                                title="Convert to Sales Order"
-                                className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                title="Convert"
+                                className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded"
                               >
                                 <ShoppingCart size={18} />
                               </button>
                             )}
-
-                            {/* Print Button - UNLOCKED (Visible for all statuses) */}
                             <button
                               onClick={() => handlePrintClick(item)}
-                              title="Print Quotation"
-                              className="p-2 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded transition-colors"
+                              title="Print"
+                              className="p-2 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded"
                             >
                               <Printer size={18} />
                             </button>
-
-                            {/* CANCEL Button - Keep Locked logic */}
                             {!isLocked && (
                               <button
                                 onClick={() => cancelQuotation(item.id)}
-                                title="Cancel Quotation"
-                                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                title="Cancel"
+                                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
                               >
                                 <XCircle size={18} />
                               </button>
@@ -401,9 +485,10 @@ const AllSalesQuotations = () => {
                     <tr>
                       <td
                         colSpan="7"
-                        className="px-6 py-10 text-center text-slate-400"
+                        className="px-6 py-10 text-center text-slate-400 flex flex-col items-center justify-center"
                       >
-                        No quotations found.
+                        <AlertCircle size={40} className="mb-2 opacity-50" />
+                        No quotations found for this category.
                       </td>
                     </tr>
                   )}
@@ -411,7 +496,6 @@ const AllSalesQuotations = () => {
               </table>
             </div>
 
-            {/* MOBILE CARDS */}
             <div className="md:hidden grid grid-cols-1 gap-4">
               {currentItems.map((item) => (
                 <QuotationCard
@@ -422,9 +506,13 @@ const AllSalesQuotations = () => {
                   onConvertToOrder={openOrderModal}
                 />
               ))}
+              {currentItems.length === 0 && (
+                <div className="text-center py-10 text-slate-400">
+                  No results found in this tab.
+                </div>
+              )}
             </div>
 
-            {/* PAGINATION */}
             <div className="mt-6">
               <Pagination
                 itemsPerPage={itemsPerPage}
@@ -437,7 +525,6 @@ const AllSalesQuotations = () => {
         )}
       </div>
 
-      {/* SALES ORDER CONVERSION MODAL */}
       {isOrderModalVisible && (
         <AddSalesOrder
           onClose={closeOrderModal}
@@ -446,7 +533,6 @@ const AllSalesQuotations = () => {
         />
       )}
 
-      {/* PRINT COMPONENT (HIDDEN) */}
       <div style={{ display: "none" }}>
         <SalesQuotationPrint ref={quotePrintRef} data={quotePrintData} />
       </div>

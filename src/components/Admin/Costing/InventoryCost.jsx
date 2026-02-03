@@ -8,7 +8,7 @@ import InventoryFilters from "./InventoryFilters";
 import InventoryTable from "./InventoryTable";
 import InventoryStockTable from "./InventoryStockTable";
 import InventoryComparisonTable from "./InventoryComparisonTable";
-import ItemComparisonTable from "./ItemComparisonTable"; // 1. Imported New Component
+import ItemComparisonTable from "./ItemComparisonTable";
 import ProductHistoryModal from "./ProductHistoryModal";
 import {
   formatPrice,
@@ -18,6 +18,7 @@ import {
   ProductIcon,
   ValueIcon,
 } from "./Constant";
+import InventoryThresholdModal from "./InventoryThresholdModal";
 
 // --- Constants ---
 const ITEMS_PER_PAGE = 8;
@@ -51,6 +52,7 @@ const InventoryCost = () => {
     locations,
     priceType,
     setPriceType,
+    refreshData,
   } = useInventoryData();
 
   const [currentPage, setCurrentPage] = useState(1);
@@ -62,6 +64,15 @@ const InventoryCost = () => {
 
   const [selectedProductHistory, setSelectedProductHistory] = useState(null);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [isThresholdModalOpen, setIsThresholdModalOpen] = useState(false);
+  const [selectedProductThreshold, setSelectedProductThreshold] =
+    useState(null);
+
+  // NEW HANDLER
+  const handleOpenThresholdModal = (item) => {
+    setSelectedProductThreshold(item);
+    setIsThresholdModalOpen(true);
+  };
 
   const handleProductClick = (productItem) => {
     setSelectedProductHistory(productItem);
@@ -83,7 +94,7 @@ const InventoryCost = () => {
       tempItems = tempItems.filter(
         (item) =>
           item.location?.trim().toLowerCase() ===
-          selectedLocation.trim().toLowerCase()
+          selectedLocation.trim().toLowerCase(),
       );
     }
 
@@ -94,7 +105,7 @@ const InventoryCost = () => {
           item.product?.toLowerCase()?.includes(lowerCaseQuery) ||
           item.itemCode?.toLowerCase()?.includes(lowerCaseQuery) ||
           (typeof item.brand === "string" &&
-            item.brand.toLowerCase().includes(lowerCaseQuery))
+            item.brand.toLowerCase().includes(lowerCaseQuery)),
       );
     }
 
@@ -132,7 +143,7 @@ const InventoryCost = () => {
 
   const currentData = useMemo(
     () => groupedPricelists.slice(indexOfFirstItem, indexOfLastItem),
-    [groupedPricelists, indexOfFirstItem, indexOfLastItem]
+    [groupedPricelists, indexOfFirstItem, indexOfLastItem],
   );
 
   const paginate = (pageNumber) => setCurrentPage(pageNumber);
@@ -259,6 +270,7 @@ const InventoryCost = () => {
                 <ItemComparisonTable
                   groupedData={currentData}
                   onRowClick={handleProductClick}
+                  onSetThreshold={handleOpenThresholdModal} // Pass the handler
                 />
               ) : (
                 <EmptyState />
@@ -310,6 +322,13 @@ const InventoryCost = () => {
         isOpen={isHistoryModalOpen}
         onClose={() => setIsHistoryModalOpen(false)}
         product={selectedProductHistory}
+      />
+
+      <InventoryThresholdModal
+        isOpen={isThresholdModalOpen}
+        onClose={() => setIsThresholdModalOpen(false)}
+        product={selectedProductThreshold}
+        onSuccess={refreshData} // This triggers a re-fetch of the data to show updated warnings
       />
     </div>
   );

@@ -1,6 +1,6 @@
 // src/components/YourModule/GoodsReceiptModule/AllGoodsReceipts.jsx
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState, useMemo } from "react";
 import { ToastContainer, toast } from "react-toastify";
 import axios from "axios";
 import {
@@ -16,19 +16,18 @@ import {
   AlertCircle,
   Truck,
   CheckCircle,
-  Eye, // Added Icon
+  Eye,
+  MapPin, // Added for Location
 } from "lucide-react";
 
 import Loader from "../../../loader/Loader";
 import Pagination from "../../Pagination";
 import AddGoodsReceipt from "./AddGoodsReceipt";
-import SerialNumberModal from "./SerialNumberModal"; // Import the new component
+import SerialNumberModal from "./SerialNumberModal";
 import { domain } from "../../../../security";
 import { useSelector } from "react-redux";
 import { selectFullName } from "../../../../redux/IchthusSlice";
 
-// --- Mobile Card Component ---
-// Added onViewSerials prop
 const MobileGRCard = ({ gr, expanded, onToggle, onDelete, onViewSerials }) => {
   return (
     <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 mb-4">
@@ -49,8 +48,9 @@ const MobileGRCard = ({ gr, expanded, onToggle, onDelete, onViewSerials }) => {
             <p className="text-sm text-slate-500 flex items-center gap-1 mt-1">
               <Truck size={14} /> PO: {gr.poNumber || "N/A"}
             </p>
-            <p className="text-xs text-slate-400 mt-1">
-              {new Date(gr.receiptDate).toLocaleString()}
+            {/* Added Location to Mobile Header */}
+            <p className="text-xs text-indigo-600 flex items-center gap-1 mt-1 font-medium">
+              <MapPin size={12} /> {gr.locationName || "No Location"}
             </p>
           </div>
         </div>
@@ -58,14 +58,23 @@ const MobileGRCard = ({ gr, expanded, onToggle, onDelete, onViewSerials }) => {
           <span className="px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-200">
             Completed
           </span>
-          <p className="text-xs text-slate-500 mt-2 flex items-center justify-end gap-1">
-            <User size={12} /> {gr.receivedBy}
+          <p className="text-[10px] text-slate-400 mt-2">
+            {new Date(gr.receiptDate).toLocaleDateString()}
           </p>
         </div>
       </div>
 
       {expanded && (
         <div className="mt-4 pt-4 border-t border-slate-100">
+          <div className="mb-4 bg-slate-50 p-2 rounded border border-slate-100 text-xs text-slate-600">
+            <div className="flex items-center gap-2">
+              <User size={14} className="text-slate-400" />
+              <span>
+                Received By: <strong>{gr.receivedBy}</strong>
+              </span>
+            </div>
+          </div>
+
           <h4 className="font-semibold text-slate-700 mb-2 text-sm flex items-center gap-2">
             <Package size={16} /> Received Items
           </h4>
@@ -78,7 +87,6 @@ const MobileGRCard = ({ gr, expanded, onToggle, onDelete, onViewSerials }) => {
                   item.product?.productName ||
                   item.productName ||
                   "Unknown Item";
-
                 return (
                   <div
                     key={item.id}
@@ -92,22 +100,15 @@ const MobileGRCard = ({ gr, expanded, onToggle, onDelete, onViewSerials }) => {
                         Qty: {item.quantityReceived}
                       </span>
                     </div>
-
-                    {/* Button to view serials instead of badges */}
-                    {serialsToDisplay.length > 0 ? (
+                    {serialsToDisplay.length > 0 && (
                       <button
                         onClick={() =>
                           onViewSerials(serialsToDisplay, productName)
                         }
-                        className="mt-2 w-full py-1.5 px-3 bg-white border border-indigo-200 text-indigo-600 rounded text-xs font-medium hover:bg-indigo-50 transition-colors flex items-center justify-center gap-2"
+                        className="mt-2 w-full py-1.5 px-3 bg-white border border-indigo-200 text-indigo-600 rounded text-xs font-medium flex items-center justify-center gap-2"
                       >
-                        <Eye size={12} /> View {serialsToDisplay.length} Serial
-                        Numbers
+                        <Eye size={12} /> View {serialsToDisplay.length} Serials
                       </button>
-                    ) : (
-                      <p className="text-[10px] text-slate-400 mt-1 italic">
-                        No serials recorded
-                      </p>
                     )}
                   </div>
                 );
@@ -117,14 +118,12 @@ const MobileGRCard = ({ gr, expanded, onToggle, onDelete, onViewSerials }) => {
             )}
           </div>
 
-          <div className="flex flex-col gap-2 mt-4 pt-3 border-t border-slate-100">
-            <button
-              onClick={() => onDelete(gr.id)}
-              className="flex-1 py-2 bg-red-50 text-red-600 rounded text-xs font-medium border border-red-200 flex items-center justify-center gap-2"
-            >
-              <Trash2 size={14} /> Delete Receipt
-            </button>
-          </div>
+          <button
+            onClick={() => onDelete(gr.id)}
+            className="w-full mt-4 py-2 bg-red-50 text-red-600 rounded text-xs font-medium border border-red-200 flex items-center justify-center gap-2"
+          >
+            <Trash2 size={14} /> Delete Receipt
+          </button>
         </div>
       )}
     </div>
@@ -139,9 +138,13 @@ const AllGoodsReceipts = () => {
   const [expandedGR, setExpandedGR] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
-  const [activeTab, setActiveTab] = useState("all");
 
-  // --- New State for Serial Number Modal ---
+  // CHANGED: Default state is now "my" instead of "all"
+  const [activeTab, setActiveTab] = useState("my");
+
+  // --- 1. New Location States ---
+  const [selectedLocation, setSelectedLocation] = useState("");
+
   const [serialModalData, setSerialModalData] = useState({
     isOpen: false,
     serials: [],
@@ -150,14 +153,27 @@ const AllGoodsReceipts = () => {
 
   const fullName = useSelector(selectFullName);
 
-  // --- Fetch Logic ---
+  // --- 2. Extract Unique Locations Logic ---
+  const locations = useMemo(() => {
+    const unique = [
+      ...new Set(grData.map((gr) => gr.locationName).filter(Boolean)),
+    ].sort();
+    return unique.length > 0 ? [...unique, "All"] : ["All"];
+  }, [grData]);
+
+  // --- 3. Auto-select Default Location ---
+  useEffect(() => {
+    if (locations.length > 0 && selectedLocation === "") {
+      setSelectedLocation(locations[0] !== "All" ? locations[0] : "All");
+    }
+  }, [locations, selectedLocation]);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const response = await axios.get(`${domain}/api/GoodsReceipts`);
-
       const sortedData = response.data.sort(
-        (a, b) => new Date(b.receiptDate) - new Date(a.receiptDate)
+        (a, b) => new Date(b.receiptDate) - new Date(a.receiptDate),
       );
 
       const normalizedData = sortedData.map((gr) => ({
@@ -170,7 +186,7 @@ const AllGoodsReceipts = () => {
             productName: line.product
               ? line.product.productName
               : line.productName,
-          })
+          }),
         ),
       }));
 
@@ -187,27 +203,23 @@ const AllGoodsReceipts = () => {
     fetchData();
   }, [fetchData]);
 
-  // --- Delete Logic ---
   const deleteGoodsReceipt = async (id) => {
     if (
       !window.confirm(
-        "Are you sure you want to delete this Goods Receipt? \n\nThis will reverse the inventory stock."
+        "Are you sure you want to delete this Goods Receipt? \n\nThis will reverse the inventory stock.",
       )
-    ) {
+    )
       return;
-    }
     try {
       await axios.delete(`${domain}/api/GoodsReceipts/${id}`);
       toast.success("Goods Receipt deleted successfully.");
       if (expandedGR === id) setExpandedGR(null);
       fetchData();
     } catch (error) {
-      console.error(error);
       toast.error(error.response?.data?.message || "Failed to delete receipt.");
     }
   };
 
-  // --- Serial Modal Handlers ---
   const openSerialModal = (serials, productName) => {
     setSerialModalData({
       isOpen: true,
@@ -220,37 +232,37 @@ const AllGoodsReceipts = () => {
     setSerialModalData((prev) => ({ ...prev, isOpen: false }));
   };
 
-  // --- Filtering & Pagination ---
   const tabFilteredGRs = grData.filter((gr) => {
-    if (activeTab === "my") {
+    if (activeTab === "my")
       return gr.receivedBy?.toLowerCase() === fullName?.toLowerCase();
-    }
     return true;
   });
 
-  const filteredGRs = tabFilteredGRs.filter(
-    (gr) =>
+  // --- 4. Updated Filtering Logic ---
+  const filteredGRs = tabFilteredGRs.filter((gr) => {
+    const matchesSearch =
       (gr.receiptNumber?.toLowerCase() || "").includes(
-        searchTerm.toLowerCase()
+        searchTerm.toLowerCase(),
       ) ||
       (gr.poNumber?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
-      (gr.receivedBy?.toLowerCase() || "").includes(searchTerm.toLowerCase())
-  );
+      (gr.receivedBy?.toLowerCase() || "").includes(searchTerm.toLowerCase());
+
+    const matchesLocation =
+      selectedLocation === "All" ||
+      gr.locationName === selectedLocation ||
+      selectedLocation === "";
+
+    return matchesSearch && matchesLocation;
+  });
 
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentGRs = filteredGRs.slice(indexOfFirstItem, indexOfLastItem);
 
-  // --- Handlers ---
   const openModal = () => setIsModalVisible(true);
   const closeModal = () => setIsModalVisible(false);
-
-  const toggleExpandGR = (id) => {
-    setExpandedGR(expandedGR === id ? null : id);
-  };
-
+  const toggleExpandGR = (id) => setExpandedGR(expandedGR === id ? null : id);
   const paginate = (pageNumber) => setCurrentPage(pageNumber);
-
   const handleTabChange = (tab) => {
     setActiveTab(tab);
     setCurrentPage(1);
@@ -260,7 +272,6 @@ const AllGoodsReceipts = () => {
     <div className="min-h-screen pb-12">
       <ToastContainer position="top-right" autoClose={3000} />
 
-      {/* --- Header --- */}
       <div className="bg-white border-slate-200 sticky top-0 z-20 shadow-sm">
         <div className="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -282,24 +293,16 @@ const AllGoodsReceipts = () => {
 
           <div className="flex gap-6 mt-6 border-b border-slate-200">
             <button
-              onClick={() => handleTabChange("all")}
-              className={`pb-3 text-sm font-medium transition-all relative ${
-                activeTab === "all"
-                  ? "text-indigo-600 border-b-2 border-indigo-600"
-                  : "text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              All Receipts
-            </button>
-            <button
               onClick={() => handleTabChange("my")}
-              className={`pb-3 text-sm font-medium transition-all relative ${
-                activeTab === "my"
-                  ? "text-indigo-600 border-b-2 border-indigo-600"
-                  : "text-slate-500 hover:text-slate-700"
-              }`}
+              className={`pb-3 text-sm font-medium transition-all relative ${activeTab === "my" ? "text-indigo-600 border-b-2 border-indigo-600" : "text-slate-500 hover:text-slate-700"}`}
             >
               My Receipts
+            </button>
+            <button
+              onClick={() => handleTabChange("all")}
+              className={`pb-3 text-sm font-medium transition-all relative ${activeTab === "all" ? "text-indigo-600 border-b-2 border-indigo-600" : "text-slate-500 hover:text-slate-700"}`}
+            >
+              All Receipts
             </button>
           </div>
         </div>
@@ -307,18 +310,42 @@ const AllGoodsReceipts = () => {
 
       <div className="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 mt-6">
         <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search by Receipt #, PO #, or Receiver..."
-              className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition-shadow text-sm"
-              value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setCurrentPage(1);
-              }}
-            />
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search by Receipt #, PO #, or Receiver..."
+                className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition-shadow text-sm"
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1);
+                }}
+              />
+            </div>
+
+            {/* --- 5. Location Dropdown UI --- */}
+            <div className="relative min-w-[220px]">
+              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <select
+                value={selectedLocation}
+                onChange={(e) => {
+                  setSelectedLocation(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="w-full pl-9 pr-10 py-2 border border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 appearance-none bg-white text-sm text-slate-700 cursor-pointer transition-shadow"
+              >
+                {locations.map((loc) => (
+                  <option key={loc} value={loc}>
+                    {loc === "All" ? "All Locations" : loc}
+                  </option>
+                ))}
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                <ChevronDown size={16} />
+              </div>
+            </div>
           </div>
         </div>
 
@@ -328,17 +355,16 @@ const AllGoodsReceipts = () => {
           </div>
         ) : (
           <>
-            {/* --- Desktop Table --- */}
             <div className="hidden md:block bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
               <table className="w-full text-sm text-left text-slate-600">
                 <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200">
                   <tr>
                     <th className="w-10 px-4 py-4"></th>
                     <th className="px-4 py-4">Receipt #</th>
+                    <th className="px-4 py-4">Location</th> {/* Added Column */}
                     <th className="px-4 py-4">PO Reference</th>
                     <th className="px-4 py-4">Date Received</th>
                     <th className="px-4 py-4">Received By</th>
-                    <th className="px-4 py-4 text-center">Status</th>
                     <th className="px-4 py-4 text-center">Actions</th>
                   </tr>
                 </thead>
@@ -347,9 +373,7 @@ const AllGoodsReceipts = () => {
                     <React.Fragment key={gr.id}>
                       <tr
                         onClick={() => toggleExpandGR(gr.id)}
-                        className={`hover:bg-slate-50 transition cursor-pointer ${
-                          expandedGR === gr.id ? "bg-slate-50" : ""
-                        }`}
+                        className={`hover:bg-slate-50 transition cursor-pointer ${expandedGR === gr.id ? "bg-slate-50" : ""}`}
                       >
                         <td className="px-4 py-4 text-center">
                           {expandedGR === gr.id ? (
@@ -361,45 +385,30 @@ const AllGoodsReceipts = () => {
                         <td className="px-4 py-4 font-semibold text-slate-800">
                           {gr.receiptNumber}
                         </td>
-                        <td className="px-4 py-4 text-indigo-600 font-medium">
+                        {/* --- 6. Location Cell --- */}
+                        <td className="px-4 py-4">
+                          <span className="flex items-center gap-1.5 text-indigo-600 font-medium">
+                            <MapPin size={14} /> {gr.locationName || "N/A"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 text-slate-600">
                           {gr.poNumber || "N/A"}
                         </td>
                         <td className="px-4 py-4">
                           <div className="flex items-center gap-2">
                             <Calendar size={14} className="text-slate-400" />
                             {new Date(gr.receiptDate).toLocaleDateString()}
-                            <span className="text-xs text-slate-400">
-                              {new Date(gr.receiptDate).toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </span>
                           </div>
                         </td>
-                        <td className="px-4 py-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-bold">
-                              {gr.receivedBy
-                                ? gr.receivedBy.charAt(0).toUpperCase()
-                                : "?"}
-                            </div>
-                            {gr.receivedBy}
-                          </div>
-                        </td>
-                        <td className="px-4 py-4 text-center">
-                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1">
-                            <CheckCircle size={10} /> Completed
-                          </span>
-                        </td>
+                        <td className="px-4 py-4">{gr.receivedBy}</td>
                         <td className="px-4 py-4">
                           <div
-                            className="flex items-center justify-center gap-2"
+                            className="flex items-center justify-center"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <button
                               onClick={() => deleteGoodsReceipt(gr.id)}
-                              title="Delete Receipt"
-                              className="p-1.5 text-red-600 hover:bg-red-50 rounded transition border border-transparent hover:border-red-100"
+                              className="p-1.5 text-red-600 hover:bg-red-50 rounded transition"
                             >
                               <Trash2 size={18} />
                             </button>
@@ -407,7 +416,6 @@ const AllGoodsReceipts = () => {
                         </td>
                       </tr>
 
-                      {/* --- Expanded Details --- */}
                       {expandedGR === gr.id && (
                         <tr>
                           <td
@@ -415,14 +423,25 @@ const AllGoodsReceipts = () => {
                             className="bg-slate-50 p-4 border-b border-slate-200 shadow-inner"
                           >
                             <div className="bg-white rounded border border-slate-200 p-4">
-                              <div className="flex justify-between items-center mb-3">
-                                <h4 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
-                                  <Package
-                                    size={16}
-                                    className="text-indigo-600"
-                                  />{" "}
-                                  Received Line Items
-                                </h4>
+                              <div className="flex justify-between items-center mb-4 pb-2 border-b border-slate-100">
+                                <div className="flex gap-4">
+                                  <div className="text-xs">
+                                    <span className="text-slate-400 uppercase font-bold block">
+                                      Location
+                                    </span>
+                                    <span className="font-semibold">
+                                      {gr.locationName || "N/A"}
+                                    </span>
+                                  </div>
+                                  <div className="text-xs">
+                                    <span className="text-slate-400 uppercase font-bold block">
+                                      PO Number
+                                    </span>
+                                    <span className="font-semibold">
+                                      {gr.poNumber || "N/A"}
+                                    </span>
+                                  </div>
+                                </div>
                                 {gr.notes && (
                                   <span className="text-xs text-slate-500 italic bg-yellow-50 px-2 py-1 rounded border border-yellow-100">
                                     Note: {gr.notes}
@@ -435,55 +454,45 @@ const AllGoodsReceipts = () => {
                                   <tr>
                                     <th className="px-3 py-2">Product Name</th>
                                     <th className="px-3 py-2 text-center">
-                                      Quantity Received
+                                      Qty Received
                                     </th>
-                                    <th className="px-3 py-2">
-                                      Serial Numbers
-                                    </th>
+                                    <th className="px-3 py-2">Serials</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
                                   {gr.goodsReceiptLines.map((item, idx) => {
-                                    const serialsToDisplay =
+                                    const serials =
                                       item.receiptSerialNumbers ||
                                       item.serialNumbers ||
                                       [];
-                                    const productName =
-                                      item.product?.productName ||
-                                      item.productName ||
-                                      "Unknown Item";
-
                                     return (
                                       <tr
                                         key={item.id || idx}
                                         className="hover:bg-slate-50"
                                       >
-                                        <td className="px-3 py-2 font-medium text-slate-700">
-                                          {productName}
+                                        <td className="px-3 py-2 font-medium">
+                                          {item.productName}
                                         </td>
-                                        <td className="px-3 py-2 text-center font-bold text-indigo-600 text-sm">
+                                        <td className="px-3 py-2 text-center font-bold text-indigo-600">
                                           {item.quantityReceived}
                                         </td>
                                         <td className="px-3 py-2">
-                                          {serialsToDisplay.length > 0 ? (
+                                          {serials.length > 0 ? (
                                             <button
                                               onClick={() =>
                                                 openSerialModal(
-                                                  serialsToDisplay,
-                                                  productName
+                                                  serials,
+                                                  item.productName,
                                                 )
                                               }
-                                              className="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-300 text-slate-700 rounded shadow-sm hover:bg-slate-50 hover:text-indigo-600 hover:border-indigo-300 transition-all text-xs font-medium"
+                                              className="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-300 rounded text-xs hover:bg-slate-50 transition-all"
                                             >
-                                              <Eye size={12} />
-                                              View {
-                                                serialsToDisplay.length
-                                              }{" "}
-                                              Serials
+                                              <Eye size={12} /> View{" "}
+                                              {serials.length} Serials
                                             </button>
                                           ) : (
                                             <span className="text-slate-400 italic">
-                                              No serials required
+                                              No serials
                                             </span>
                                           )}
                                         </td>
@@ -498,40 +507,21 @@ const AllGoodsReceipts = () => {
                       )}
                     </React.Fragment>
                   ))}
-
-                  {/* Empty state ... */}
-                  {currentGRs.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan="7"
-                        className="text-center py-10 text-slate-400"
-                      >
-                        No receipts found.
-                      </td>
-                    </tr>
-                  )}
                 </tbody>
               </table>
             </div>
 
-            {/* --- Mobile View --- */}
             <div className="md:hidden">
-              {currentGRs.length > 0 ? (
-                currentGRs.map((gr) => (
-                  <MobileGRCard
-                    key={gr.id}
-                    gr={gr}
-                    expanded={expandedGR === gr.id}
-                    onToggle={toggleExpandGR}
-                    onDelete={deleteGoodsReceipt}
-                    onViewSerials={openSerialModal} // Pass function here
-                  />
-                ))
-              ) : (
-                <div className="text-center py-10 text-slate-400">
-                  No goods receipts found.
-                </div>
-              )}
+              {currentGRs.map((gr) => (
+                <MobileGRCard
+                  key={gr.id}
+                  gr={gr}
+                  expanded={expandedGR === gr.id}
+                  onToggle={toggleExpandGR}
+                  onDelete={deleteGoodsReceipt}
+                  onViewSerials={openSerialModal}
+                />
+              ))}
             </div>
 
             <div className="mt-6">
@@ -546,7 +536,6 @@ const AllGoodsReceipts = () => {
         )}
       </div>
 
-      {/* --- Add Receipt Modal (Original) --- */}
       {isModalVisible && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
           <div className="w-full max-w-6xl max-h-[95vh] overflow-hidden">
@@ -555,7 +544,6 @@ const AllGoodsReceipts = () => {
         </div>
       )}
 
-      {/* --- Serial Number Modal (New) --- */}
       <SerialNumberModal
         isOpen={serialModalData.isOpen}
         onClose={closeSerialModal}

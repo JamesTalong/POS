@@ -16,7 +16,7 @@ const SearchItemModal = ({ onSelectProduct, onClose }) => {
     const fetchAllProducts = async () => {
       try {
         setLoading(true); // Start loading
-        const response = await axios.get(`${domain}/api/Pricelists`);
+        const response = await axios.get(`${domain}/api/Products`);
         console.log("Fetched Products:", response.data); // Debugging log
 
         if (response.data) {
@@ -49,7 +49,7 @@ const SearchItemModal = ({ onSelectProduct, onClose }) => {
     // Use allProducts from state
     (p) =>
       p.product.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.itemCode.toLowerCase().includes(searchTerm.toLowerCase())
+      p.itemCode.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
   console.log("Filtered Products:", filteredProducts); // Debugging log

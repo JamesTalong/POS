@@ -36,6 +36,9 @@ const VendorCard = ({ vendor, onView, onEdit, onDelete }) => (
           <span className="font-bold text-slate-800 text-lg block">
             {vendor.vendorName}
           </span>
+          <div className="text-[10px] text-slate-400 font-formal ">
+            {vendor.vendorCode}
+          </div>
           <span
             className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
               vendor.vendorStatus === "Active"
@@ -157,7 +160,7 @@ const AllVendors = () => {
           .toLowerCase()
           .includes(searchTerm.toLowerCase()) ||
         (vendor.email || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (vendor.tin || "").toLowerCase().includes(searchTerm.toLowerCase())
+        (vendor.tin || "").toLowerCase().includes(searchTerm.toLowerCase()),
     );
     setFilteredVendors(results);
     setCurrentPage(1);
@@ -207,7 +210,7 @@ const AllVendors = () => {
   const indexOfFirstVendor = indexOfLastVendor - vendorsPerPage;
   const currentVendors = filteredVendors.slice(
     indexOfFirstVendor,
-    indexOfLastVendor
+    indexOfLastVendor,
   );
 
   const paginate = (pageNumber) => setCurrentPage(pageNumber);
@@ -298,6 +301,9 @@ const AllVendors = () => {
                     >
                       <td className="px-6 py-4 font-bold text-slate-800">
                         {vendor.id}
+                        <div className="text-[10px] text-slate-400 font-formal ">
+                          {vendor.vendorCode}
+                        </div>
                       </td>
                       <td className="px-6 py-4 font-bold text-slate-800">
                         {vendor.vendorName}

@@ -35,6 +35,9 @@ const CustomerCard = ({ customer, onView, onEdit, onDelete }) => (
           <span className="font-bold text-slate-800 text-lg block">
             {customer.customerName}
           </span>
+          <span className="font-bold text-slate-800 text-lg block">
+            {customer.customerCode}
+          </span>
           <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
             {customer.customerType}
           </span>
@@ -184,7 +187,7 @@ const AllCustomers = () => {
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentCustomers = filteredCustomers.slice(
     indexOfFirstItem,
-    indexOfLastItem
+    indexOfLastItem,
   );
 
   const paginate = (pageNumber) => setCurrentPage(pageNumber);

@@ -1,0 +1,7 @@
+{
+  "name": "node-sandbox",
+  "command": "npx",
+  "args": ["-y", "node-code-sandbox-mcp"],
+  "type": "node",
+  "port": 3000
+}

@@ -1,5 +1,5 @@
 import React from "react";
-import { FaShoppingCart } from "react-icons/fa"; // Using FontAwesome Icon as requested
+import { FaShoppingCart } from "react-icons/fa";
 
 const PrintPurchaseOrder = React.forwardRef(({ po }, ref) => {
   if (!po) return null;
@@ -9,6 +9,7 @@ const PrintPurchaseOrder = React.forwardRef(({ po }, ref) => {
     return new Intl.NumberFormat("en-PH", {
       style: "currency",
       currency: po.currency || "PHP",
+      minimumFractionDigits: 2,
     }).format(amount || 0);
   };
 
@@ -22,6 +23,13 @@ const PrintPurchaseOrder = React.forwardRef(({ po }, ref) => {
     });
   };
 
+  // 3. Calculate Subtotal from Line Items
+  const subTotal =
+    po.purchaseOrderLineItems?.reduce(
+      (sum, item) => sum + (item.lineTotal || 0),
+      0,
+    ) || 0;
+
   return (
     <div
       ref={ref}
@@ -30,7 +38,6 @@ const PrintPurchaseOrder = React.forwardRef(({ po }, ref) => {
       {/* --- HEADER --- */}
       <div className="flex justify-between items-end mb-6">
         <div>
-          {/* Replaced Company Name with Fa Icon */}
           <div className="text-slate-700 text-4xl">
             <FaShoppingCart />
           </div>
@@ -44,19 +51,31 @@ const PrintPurchaseOrder = React.forwardRef(({ po }, ref) => {
 
       {/* --- GRAY INFO BLOCK --- */}
       <div className="bg-slate-100 p-4 flex justify-between border-t border-slate-300 mb-0">
-        {/* Column 1: Supplier Info from JSON */}
         <div className="w-1/3 space-y-1.5">
           <div className="flex">
             <span className="font-bold w-24">Supplier Code:</span>
-            <span>{po.vendorId}</span>
+            <span>{po.vendorDetails?.vendorCode || po.vendorId}</span>
           </div>
           <div className="flex">
             <span className="font-bold w-24">Supplier Name:</span>
-            <span className="font-semibold">{po.vendor}</span>
+            <span className="font-semibold">
+              {po.vendorDetails?.vendorName || po.vendor}
+            </span>
+          </div>
+
+          {po.vendorDetails?.address && (
+            <div className="flex">
+              <span className="font-bold w-24">Address:</span>
+              <p className="text-slate-500 mt-1">{po.vendorDetails.address}</p>
+            </div>
+          )}
+          {/* Added Contact info from your JSON if available */}
+          <div className="flex">
+            <span className="font-bold w-24">Contact:</span>
+            <span>{po.vendorDetails?.contactPerson}</span>
           </div>
         </div>
 
-        {/* Column 2: PO Details from JSON */}
         <div className="w-1/3 space-y-1.5 border-l border-slate-300 pl-4">
           <div className="flex">
             <span className="font-bold w-24">PO Date:</span>
@@ -70,13 +89,8 @@ const PrintPurchaseOrder = React.forwardRef(({ po }, ref) => {
             <span className="font-bold w-24">Status:</span>
             <span className="uppercase">{po.status}</span>
           </div>
-          <div className="flex">
-            <span className="font-bold w-24">Freight:</span>
-            <span>{formatCurrency(po.shippingCost)}</span>
-          </div>
         </div>
 
-        {/* Column 3: Payment/Delivery from JSON */}
         <div className="w-1/3 space-y-1.5 border-l border-slate-300 pl-4">
           <div className="flex">
             <span className="font-bold w-28">Payment Terms:</span>
@@ -102,8 +116,6 @@ const PrintPurchaseOrder = React.forwardRef(({ po }, ref) => {
             (Billing address not provided)
           </p>
         </div>
-
-        {/* Ship To: Using 'location' from JSON */}
         <div className="w-1/2 p-4">
           <p className="font-bold mb-1">{po.location}</p>
         </div>
@@ -165,16 +177,36 @@ const PrintPurchaseOrder = React.forwardRef(({ po }, ref) => {
         </table>
       </div>
 
-      {/* --- TOTALS --- */}
+      {/* --- TOTALS SECTION (UPDATED) --- */}
       <div className="flex justify-end mb-8">
         <div className="w-1/3">
-          <div className="flex justify-between py-2 px-2">
-            <span className="font-bold">Total</span>
-            <span className="font-bold">{formatCurrency(po.grandTotal)}</span>
+          {/* Subtotal */}
+          <div className="flex justify-between py-1 px-2">
+            <span className="font-bold">Subtotal:</span>
+            <span className="font-semibold">{formatCurrency(subTotal)}</span>
           </div>
-          {/* No tax/discount data in JSON, so strictly showing Grand Total */}
-          <div className="flex justify-between py-2 px-2 border-t-2 border-slate-800 bg-slate-50">
-            <span className="font-bold text-sm">Grand total</span>
+
+          {/* Shipping */}
+          <div className="flex justify-between py-1 px-2">
+            <span className="font-bold">Shipping:</span>
+            <span>{formatCurrency(po.shippingCost)}</span>
+          </div>
+
+          {/* VAT */}
+          <div className="flex justify-between py-1 px-2">
+            <span className="font-bold">VAT:</span>
+            <span>+{formatCurrency(po.vat)}</span>
+          </div>
+
+          {/* EWT */}
+          <div className="flex justify-between py-1 px-2 border-b border-slate-300 pb-2">
+            <span className="font-bold">EWT:</span>
+            <span>-{formatCurrency(po.ewt)}</span>
+          </div>
+
+          {/* Grand Total */}
+          <div className="flex justify-between py-2 px-2 border-t-2 border-slate-800 bg-slate-50 mt-1">
+            <span className="font-bold text-sm">Grand Total:</span>
             <span className="font-bold text-sm">
               {formatCurrency(po.grandTotal)}
             </span>
@@ -184,7 +216,6 @@ const PrintPurchaseOrder = React.forwardRef(({ po }, ref) => {
 
       {/* --- FOOTER / TERMS & SIGNATURE --- */}
       <div className="flex justify-between items-end mt-auto pt-8 border-t border-slate-200">
-        {/* Terms */}
         <div className="w-3/5 text-[10px] text-slate-600">
           <p className="font-bold mb-1 text-slate-800">Terms and conditions:</p>
           <ol className="list-decimal pl-4 space-y-0.5 leading-tight">
@@ -206,7 +237,6 @@ const PrintPurchaseOrder = React.forwardRef(({ po }, ref) => {
           )}
         </div>
 
-        {/* Signature Box */}
         <div className="w-1/3 border border-slate-300">
           <div className="bg-blue-600 text-white text-center font-bold py-1">
             Authorized Signature

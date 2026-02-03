@@ -67,7 +67,7 @@ const SignIn = () => {
 
       dispatch(
         SET_ACTIVE_USER({
-          userID: userData.employeeId,
+          userID: userData.id,
           userName: userData.userName,
           employeeId: userData.employeeId,
           roleName: userData.roleName,
@@ -78,7 +78,7 @@ const SignIn = () => {
           imgUrl: userData.employeeImage,
           locationId: userData.locationId,
           locationName: userData.locationName,
-        })
+        }),
       );
 
       toast.success("Login Successful...");

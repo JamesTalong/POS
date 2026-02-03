@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { ToastContainer, toast } from "react-toastify";
 import axios from "axios";
 import {
@@ -9,7 +9,6 @@ import {
   Filter,
   Package,
   Plus,
-  Edit,
   Hash,
   MapPin,
   Tag,
@@ -21,7 +20,6 @@ import AddSerialNumber from "./AddSerialNumber";
 import Pagination from "../../Pagination";
 import { domain } from "../../../../security";
 
-// Simplified Mobile Card Component
 const SerialCard = ({ serial, onEdit }) => (
   <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
     <div className="flex justify-between items-start mb-2">
@@ -75,13 +73,21 @@ const AllSerialNumbers = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [batchOrProductSearch, setBatchOrProductSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [filterLocation, setFilterLocation] = useState("all"); // NEW: Location Filter State
   const [filteredSerials, setFilteredSerials] = useState([]);
+
+  // Memoized list of unique locations for the dropdown
+  const uniqueLocations = useMemo(() => {
+    const locations = serialNumbers
+      .map((item) => item.locationName)
+      .filter((name) => name && name.trim() !== "");
+    return [...new Set(locations)].sort();
+  }, [serialNumbers]);
 
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       const response = await axios.get(`${domain}/api/SerialNumbers`);
-      // Controller returns: Id, SerialName, ProductName, BatchNumber, LocationName, IsAvailable, etc.
       setSerialNumbers(response.data);
     } catch (error) {
       console.error("Error fetching data:", error);
@@ -111,13 +117,18 @@ const AllSerialNumbers = () => {
         .toLowerCase()
         .includes(batchOrProductSearch.toLowerCase());
 
+      // 3. Filter by Location
+      const locationMatch =
+        filterLocation === "all" || item.locationName === filterLocation;
+
       return (
         serialMatch &&
-        (batchOrProductSearch === "" || batchMatch || productMatch)
+        (batchOrProductSearch === "" || batchMatch || productMatch) &&
+        locationMatch
       );
     });
 
-    // 3. Filter by Status (Available vs Sold)
+    // 4. Filter by Status (Available vs Sold)
     if (filterStatus === "sold") {
       results = results.filter((item) => item.isAvailable === false);
     } else if (filterStatus === "available") {
@@ -125,8 +136,14 @@ const AllSerialNumbers = () => {
     }
 
     setFilteredSerials(results);
-    setCurrentPage(1); // Reset to page 1 on filter change
-  }, [searchTerm, batchOrProductSearch, filterStatus, serialNumbers]);
+    setCurrentPage(1);
+  }, [
+    searchTerm,
+    batchOrProductSearch,
+    filterStatus,
+    filterLocation,
+    serialNumbers,
+  ]);
 
   const openModal = (serial = null) => {
     setSerialToEdit(serial);
@@ -144,11 +161,11 @@ const AllSerialNumbers = () => {
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentSerials = filteredSerials.slice(
     indexOfFirstItem,
-    indexOfLastItem
+    indexOfLastItem,
   );
 
   const totalAvailable = serialNumbers.filter(
-    (item) => item.isAvailable
+    (item) => item.isAvailable,
   ).length;
   const totalSold = serialNumbers.length - totalAvailable;
 
@@ -156,7 +173,6 @@ const AllSerialNumbers = () => {
     <div className="min-h-screen pb-12 ">
       <ToastContainer position="top-right" autoClose={3000} />
 
-      {/* --- Header --- */}
       <div className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-20">
         <div className="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -189,7 +205,6 @@ const AllSerialNumbers = () => {
       </div>
 
       <div className="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 mt-6">
-        {/* --- Stats Cards --- */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
           <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4">
             <div className="p-3 bg-blue-50 text-blue-600 rounded-lg">
@@ -224,28 +239,47 @@ const AllSerialNumbers = () => {
           </div>
         </div>
 
-        {/* --- Filters --- */}
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 grid md:grid-cols-3 gap-4 mb-6">
+        {/* --- Updated Filters Section --- */}
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Search Serial Number..."
+              placeholder="Search Serial..."
               className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 outline-none"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+
           <div className="relative">
             <Package className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Filter by Product or Batch..."
+              placeholder="Filter by Product/Batch..."
               className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 outline-none"
               value={batchOrProductSearch}
               onChange={(e) => setBatchOrProductSearch(e.target.value)}
             />
           </div>
+
+          {/* New Location Dropdown */}
+          <div className="relative">
+            <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <select
+              className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white outline-none appearance-none"
+              value={filterLocation}
+              onChange={(e) => setFilterLocation(e.target.value)}
+            >
+              <option value="all">All Locations</option>
+              {uniqueLocations.map((loc) => (
+                <option key={loc} value={loc}>
+                  {loc}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div className="relative">
             <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <select
@@ -260,7 +294,6 @@ const AllSerialNumbers = () => {
           </div>
         </div>
 
-        {/* --- Content --- */}
         {loading ? (
           <div className="flex justify-center py-20">
             <Loader />
@@ -276,7 +309,6 @@ const AllSerialNumbers = () => {
                     <th className="px-6 py-4">Batch Info</th>
                     <th className="px-6 py-4">Location</th>
                     <th className="px-6 py-4">Status</th>
-                    {/* <th className="px-6 py-4 text-right">Actions</th> */}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -306,45 +338,19 @@ const AllSerialNumbers = () => {
                               : "bg-red-100 text-red-800"
                           }`}
                         >
-                          {/* {item.isAvailable ? "Available" : "Sold"} */}
                           {item.inventoryStatusName}
                         </span>
                       </td>
-                      {/* <td className="px-6 py-4 text-right">
-                        <button
-                          onClick={() => openModal(item)}
-                          className="p-2 bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-100 transition"
-                          title="Edit"
-                        >
-                          <Edit size={16} />
-                        </button>
-                      </td> */}
                     </tr>
                   ))}
-                  {currentSerials.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan="6"
-                        className="px-6 py-10 text-center text-slate-400"
-                      >
-                        No serial numbers found matching your filters.
-                      </td>
-                    </tr>
-                  )}
                 </tbody>
               </table>
             </div>
 
-            {/* Mobile View */}
             <div className="md:hidden grid grid-cols-1 gap-4">
               {currentSerials.map((item) => (
                 <SerialCard key={item.id} serial={item} onEdit={openModal} />
               ))}
-              {currentSerials.length === 0 && (
-                <div className="text-center text-slate-400 py-10">
-                  No items found.
-                </div>
-              )}
             </div>
 
             <div className="mt-6">
@@ -359,7 +365,6 @@ const AllSerialNumbers = () => {
         )}
       </div>
 
-      {/* --- Modal --- */}
       {isModalVisible && (
         <div className="fixed inset-0 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">

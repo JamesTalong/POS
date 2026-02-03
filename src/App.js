@@ -53,6 +53,9 @@ import SalesOrders from "./components/Admin/SalesOrders/SalesOrders";
 import DeliveryOrders from "./components/Admin/DeliveryOrders/DeliveryOrders";
 import InventoryOverride from "./components/Admin/InventoryOverride/InventoryOverride";
 import Approvers from "./components/Admin/Approvers/Approvers";
+import DeliveryReturns from "./components/Admin/DeliveryReturns/DeliveryReturns";
+import Playground from "./components/Admin/Playground/Playground";
+import WelcomingPage from "./components/Admin/WelcomingPage/WelcomingPage";
 
 const App = () => {
   const router = createBrowserRouter(
@@ -64,7 +67,7 @@ const App = () => {
 
         <Route path="/change-password" element={<ChangePassword />} />
         <Route path="/admin" element={<Admin />}>
-          <Route index element={<Navigate to="dashboard" />} />
+          <Route index element={<Navigate to="WelcomingPage" />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="users" element={<UsersComponent />} />
           <Route path="employees" element={<Employees />} />
@@ -79,6 +82,9 @@ const App = () => {
             path="PurchasePriceHistories"
             element={<PurchasePriceHistories />}
           />
+          <Route path="Playground" element={<Playground />} />
+          <Route path="WelcomingPage" element={<WelcomingPage />} />
+          <Route path="DeliveryReturns" element={<DeliveryReturns />} />
           <Route path="InventoryOverride" element={<InventoryOverride />} />
           <Route path="DeliveryOrders" element={<DeliveryOrders />} />
           <Route path="SalesQuotations" element={<SalesQuotations />} />
@@ -113,8 +119,8 @@ const App = () => {
 
         {/* Redirect any other path to signin */}
         <Route path="*" element={<Navigate to="/signin" />} />
-      </Route>
-    )
+      </Route>,
+    ),
   );
 
   return (

@@ -44,10 +44,10 @@ const ProductPos = ({ isCheckoutView, onBackToProducts }) => {
   // --- Redux Data ---
   const posProducts = useSelector((state) => state.orebiReducer.posProducts);
   const existingLocation = useSelector(
-    (state) => state.orebiReducer.existingLocation
+    (state) => state.orebiReducer.existingLocation,
   );
   const selectedCustomer = useSelector(
-    (state) => state.orebiReducer.selectedCustomer
+    (state) => state.orebiReducer.selectedCustomer,
   );
   const userID = useSelector(selectUserID);
   const fullName = useSelector(selectFullName);
@@ -86,7 +86,7 @@ const ProductPos = ({ isCheckoutView, onBackToProducts }) => {
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [printData, setPrintData] = useState(null);
   const [refreshCustomerData, setRefreshCustomerData] = useState(
-    () => () => {}
+    () => () => {},
   );
 
   // --- SALES QUOTATION STATE ---
@@ -164,7 +164,7 @@ const ProductPos = ({ isCheckoutView, onBackToProducts }) => {
       const response = await axios.post(
         `${domain}/api/CustomerTemps`,
         selectedCustomer,
-        { headers: { "Content-Type": "application/json" } }
+        { headers: { "Content-Type": "application/json" } },
       );
       if (response.status === 200) {
         refreshCustomerData();
@@ -181,11 +181,11 @@ const ProductPos = ({ isCheckoutView, onBackToProducts }) => {
   const totalAmount = posProducts.reduce(
     (total, product) =>
       total + product.price * product.quantity - (product.discount || 0),
-    0
+    0,
   );
   const totalQuantity = posProducts.reduce(
     (total, product) => total + product.quantity,
-    0
+    0,
   );
   const discountAmount =
     discountType === "percentage"
@@ -306,17 +306,17 @@ const ProductPos = ({ isCheckoutView, onBackToProducts }) => {
         quantity: p.quantity,
         price: p.price,
         subtotal: p.quantity * p.price - (p.discount || 0),
-        // --- ADDED UOM FIELDS HERE ---
         uomId: p.uomId,
         uom: p.uom,
         conversionRate: p.conversionRate,
+        priceType: p.vatType,
       })),
     };
 
     try {
       const response = await axios.post(
         `${domain}/api/SalesQuotations`,
-        payload
+        payload,
       );
 
       if (response.status === 200) {
@@ -379,7 +379,7 @@ const ProductPos = ({ isCheckoutView, onBackToProducts }) => {
 
     if ((parseFloat(formData.payment) || 0) < adjustedTotalAmount) {
       alert(
-        "Insufficient Payment! The payment cannot be less than the total balance."
+        "Insufficient Payment! The payment cannot be less than the total balance.",
       );
       return;
     }
@@ -392,7 +392,7 @@ const ProductPos = ({ isCheckoutView, onBackToProducts }) => {
     const missingSerialProduct = posProducts.find(
       (p) =>
         p.hasSerial &&
-        (!purchasedSerials[p.id] || purchasedSerials[p.id].length === 0)
+        (!purchasedSerials[p.id] || purchasedSerials[p.id].length === 0),
     );
     if (missingSerialProduct) {
       alert(`Missing serials for: ${missingSerialProduct.name}`);
@@ -423,11 +423,11 @@ const ProductPos = ({ isCheckoutView, onBackToProducts }) => {
               ? `?locationId=${existingLocation.id}`
               : "";
             const res = await axios.get(
-              `${domain}/api/SerialNumbers/available/${product.productId}${locParam}`
+              `${domain}/api/SerialNumbers/available/${product.productId}${locParam}`,
             );
 
             const valid = res.data.filter(
-              (s) => !globalUsedSerialIds.has(s.id)
+              (s) => !globalUsedSerialIds.has(s.id),
             );
             const selected = valid.slice(0, req).map((s) => s.id);
             selected.forEach((id) => globalUsedSerialIds.add(id));
@@ -734,7 +734,7 @@ const ProductPos = ({ isCheckoutView, onBackToProducts }) => {
                       </div>
                       <p className="text-sm font-bold text-gray-700">
                         {formatMoney(
-                          item.price * item.quantity - (item.discount || 0)
+                          item.price * item.quantity - (item.discount || 0),
                         )}
                       </p>
                     </div>

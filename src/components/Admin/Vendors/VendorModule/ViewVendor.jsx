@@ -35,7 +35,7 @@ const ViewVendor = ({ vendorId, onClose }) => {
       newWindow.document.write(
         `<body style="margin:0; display:flex; justify-content:center; align-items:center; background-color:#1a1a1a;">
            <img src="${imageSource}" style="max-width:100%; height:auto;" alt="COR Full View" />
-         </body>`
+         </body>`,
       );
     }
   };
@@ -111,6 +111,7 @@ const ViewVendor = ({ vendorId, onClose }) => {
                   </h3>
                   <dl>
                     <DetailRow label="Vendor Name" value={vendor.vendorName} />
+                    <DetailRow label="Vendor Code" value={vendor.vendorCode} />
                     <DetailRow
                       label="Status"
                       value={vendor.vendorStatus}

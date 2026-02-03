@@ -26,6 +26,8 @@ const useInventoryData = () => {
         brand: item.brandName || "",
         itemCode: item.itemCode || "",
         barCode: item.barCode || "",
+        minStock: item.minStock || 0,
+        maxStock: item.maxStock || 0,
       }));
 
       setPricelists(formattedPricelists);
@@ -33,7 +35,7 @@ const useInventoryData = () => {
       const uniqueLocations = [
         "All",
         ...new Set(
-          formattedPricelists.map((item) => item.location).filter(Boolean)
+          formattedPricelists.map((item) => item.location).filter(Boolean),
         ),
       ];
       setLocations(uniqueLocations);
@@ -54,7 +56,7 @@ const useInventoryData = () => {
 
     if (selectedLocation !== "All") {
       filtered = filtered.filter(
-        (pricelist) => pricelist.location === selectedLocation
+        (pricelist) => pricelist.location === selectedLocation,
       );
     }
 
@@ -74,7 +76,7 @@ const useInventoryData = () => {
             return value.brandName.toLowerCase().includes(lowercasedQuery);
           }
           return false;
-        })
+        }),
       );
     }
     setFilteredPricelists(filtered);

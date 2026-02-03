@@ -1,0 +1,13 @@
+name: Warehouse Project (Local Only)
+version: 1.0.0
+schema: v1
+
+# Local Ollama model only
+models:
+  - name: Qwen Local
+    uses: ollama/qwen2.5-coder-7b
+    local: true
+
+# Optional local MCP tools
+mcpServers:
+  - uses: ./mcpServers/node-sandbox-mcp.json

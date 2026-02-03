@@ -1,0 +1,6 @@
+{
+  "name": "my-mcp-server",
+  "entry": "../../my-mcp-server/server.js",
+  "type": "node",
+  "port": 3000
+}
