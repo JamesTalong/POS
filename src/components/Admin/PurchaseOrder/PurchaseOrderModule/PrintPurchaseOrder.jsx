@@ -1,19 +1,36 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { FaShoppingCart } from "react-icons/fa";
 
 const PrintPurchaseOrder = React.forwardRef(({ po }, ref) => {
-  if (!po) return null;
+  // --- 1. CALCULATE ORIGINAL TOTALS (Existing Logic) ---
+  const originalTotalData = useMemo(() => {
+    if (!po || !po.purchaseOrderLineItems) return { total: 0, subtotal: 0 };
 
-  // 1. Currency Formatter (PHP)
+    const originalSubtotal = po.purchaseOrderLineItems.reduce((acc, item) => {
+      const qty = item.orderedQuantity || item.quantity || 0;
+      const price = item.unitPrice || 0;
+      return acc + qty * price;
+    }, 0);
+
+    let originalEwt = 0;
+    if (po.ewt > 0) {
+      const taxBase = po.vat > 0 ? originalSubtotal / 1.12 : originalSubtotal;
+      originalEwt = taxBase * 0.01;
+    }
+
+    const total = originalSubtotal + (po.shippingCost || 0) - originalEwt;
+    return { total, subtotal: originalSubtotal };
+  }, [po]);
+
+  // --- 2. HELPER FUNCTIONS ---
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat("en-PH", {
       style: "currency",
-      currency: po.currency || "PHP",
+      currency: po?.currency || "PHP",
       minimumFractionDigits: 2,
     }).format(amount || 0);
   };
 
-  // 2. Date Formatter
   const formatDate = (dateString) => {
     if (!dateString) return "-";
     return new Date(dateString).toLocaleDateString("en-GB", {
@@ -23,18 +40,22 @@ const PrintPurchaseOrder = React.forwardRef(({ po }, ref) => {
     });
   };
 
-  // 3. Calculate Subtotal from Line Items
-  const subTotal =
-    po.purchaseOrderLineItems?.reduce(
-      (sum, item) => sum + (item.lineTotal || 0),
-      0,
-    ) || 0;
+  if (!po) return null;
+
+  const hasRejections = Math.abs(originalTotalData.total - po.grandTotal) > 0.1;
+
+  const totalRejectedValue = po.purchaseOrderLineItems.reduce(
+    (acc, item) => acc + (item.rejectedQuantity || 0) * (item.unitPrice || 0),
+    0,
+  );
 
   return (
     <div
       ref={ref}
       className="bg-white p-8 w-full max-w-[210mm] mx-auto text-slate-800 text-xs font-sans leading-tight"
     >
+      {/* ... HEADER, INFO BLOCK, ADDRESSES ... (Keep these the same) */}
+
       {/* --- HEADER --- */}
       <div className="flex justify-between items-end mb-6">
         <div>
@@ -46,33 +67,34 @@ const PrintPurchaseOrder = React.forwardRef(({ po }, ref) => {
           <h2 className="text-3xl font-normal text-blue-600 uppercase tracking-wide">
             Purchase Order
           </h2>
+          {hasRejections && (
+            <div className="text-right mt-1">
+              <span className="bg-red-100 text-red-600 text-[10px] font-bold px-2 py-0.5 rounded">
+                AMENDED (REJECTIONS APPLIED)
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* --- GRAY INFO BLOCK --- */}
+      {/* --- INFO BLOCK --- */}
       <div className="bg-slate-100 p-4 flex justify-between border-t border-slate-300 mb-0">
         <div className="w-1/3 space-y-1.5">
           <div className="flex">
-            <span className="font-bold w-24">Supplier Code:</span>
-            <span>{po.vendorDetails?.vendorCode || po.vendorId}</span>
-          </div>
-          <div className="flex">
-            <span className="font-bold w-24">Supplier Name:</span>
+            <span className="font-bold w-24">Supplier:</span>
             <span className="font-semibold">
               {po.vendorDetails?.vendorName || po.vendor}
             </span>
           </div>
-
-          {po.vendorDetails?.address && (
-            <div className="flex">
-              <span className="font-bold w-24">Address:</span>
-              <p className="text-slate-500 mt-1">{po.vendorDetails.address}</p>
-            </div>
-          )}
-          {/* Added Contact info from your JSON if available */}
+          <div className="flex">
+            <span className="font-bold w-24">Address:</span>
+            <span className="w-40 truncate">
+              {po.vendorDetails?.address || "-"}
+            </span>
+          </div>
           <div className="flex">
             <span className="font-bold w-24">Contact:</span>
-            <span>{po.vendorDetails?.contactPerson}</span>
+            <span>{po.vendorDetails?.contactPerson || "-"}</span>
           </div>
         </div>
 
@@ -87,7 +109,7 @@ const PrintPurchaseOrder = React.forwardRef(({ po }, ref) => {
           </div>
           <div className="flex">
             <span className="font-bold w-24">Status:</span>
-            <span className="uppercase">{po.status}</span>
+            <span className="uppercase font-semibold">{po.status}</span>
           </div>
         </div>
 
@@ -103,13 +125,11 @@ const PrintPurchaseOrder = React.forwardRef(({ po }, ref) => {
         </div>
       </div>
 
-      {/* --- BLUE HEADERS --- */}
       <div className="flex bg-blue-600 text-white font-bold py-1.5 mt-4">
         <div className="w-1/2 px-4">Bill To:</div>
         <div className="w-1/2 px-4 border-l border-blue-400">Ship To:</div>
       </div>
 
-      {/* --- ADDRESSES --- */}
       <div className="flex mb-6 border-b border-l border-r border-slate-200">
         <div className="w-1/2 p-4 border-r border-slate-200">
           <p className="text-slate-400 italic">
@@ -121,100 +141,150 @@ const PrintPurchaseOrder = React.forwardRef(({ po }, ref) => {
         </div>
       </div>
 
-      {/* --- ITEMS TABLE --- */}
+      {/* --- ITEMS TABLE (FIXED LOGIC) --- */}
       <div className="mb-2">
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-blue-600 text-white">
-              <th className="py-2 px-2 text-center border-r border-blue-400 w-12">
-                S.No
-              </th>
-              <th className="py-2 px-2 text-center border-r border-blue-400 w-24">
-                Prod Code
+              <th className="py-2 px-2 text-center border-r border-blue-400 w-10">
+                #
               </th>
               <th className="py-2 px-2 text-left border-r border-blue-400">
                 Product Name
               </th>
-              <th className="py-2 px-2 text-center border-r border-blue-400 w-20">
+              <th className="py-2 px-2 text-center border-r border-blue-400 w-16">
                 Qty
-              </th>
-              <th className="py-2 px-2 text-center border-r border-blue-400 w-20">
-                Units
               </th>
               <th className="py-2 px-2 text-right border-r border-blue-400 w-24">
                 Rate
               </th>
-              <th className="py-2 px-2 text-right w-32">Amount</th>
+              <th className="py-2 px-2 text-right border-r border-blue-400 w-28 bg-blue-700">
+                Original PO
+              </th>
+              <th className="py-2 px-2 text-right w-28">Line Total</th>
             </tr>
           </thead>
           <tbody className="text-xs">
-            {po.purchaseOrderLineItems.map((item, index) => (
-              <tr key={item.id} className="border-b border-slate-200">
-                <td className="py-2.5 px-2 text-center border-r border-slate-200">
-                  {index + 1}
-                </td>
-                <td className="py-2.5 px-2 text-center border-r border-slate-200">
-                  {item.productId}
-                </td>
-                <td className="py-2.5 px-2 font-medium border-r border-slate-200">
-                  {item.productName}
-                </td>
-                <td className="py-2.5 px-2 text-center border-r border-slate-200">
-                  {item.orderedQuantity}
-                </td>
-                <td className="py-2.5 px-2 text-center border-r border-slate-200">
-                  {item.unitOfMeasure}
-                </td>
-                <td className="py-2.5 px-2 text-right border-r border-slate-200">
-                  {formatCurrency(item.unitPrice)}
-                </td>
-                <td className="py-2.5 px-2 text-right font-bold">
-                  {formatCurrency(item.lineTotal)}
-                </td>
-              </tr>
-            ))}
+            {po.purchaseOrderLineItems.map((item, index) => {
+              const orderedQty = item.orderedQuantity || item.quantity || 0;
+              const rejectedQty = item.rejectedQuantity || 0;
+              const unitPrice = item.unitPrice || 0;
+
+              const originalAmount = orderedQty * unitPrice;
+
+              // FIX: Calculate actual net total (Qty - Rejected) * Price
+              const netAmount = (orderedQty - rejectedQty) * unitPrice;
+
+              const isRejected = rejectedQty > 0;
+
+              return (
+                <tr key={item.id} className="border-b border-slate-200">
+                  <td className="py-2 px-2 text-center border-r border-slate-200">
+                    {index + 1}
+                  </td>
+                  <td className="py-2 px-2 border-r border-slate-200">
+                    <div className="font-medium text-slate-800">
+                      {item.productName}
+                    </div>
+                  </td>
+                  <td className="py-2 px-2 text-center border-r border-slate-200">
+                    <div>
+                      {orderedQty}{" "}
+                      <span className="text-[10px] text-slate-500">
+                        {item.unitOfMeasure}
+                      </span>
+                    </div>
+                    {isRejected && (
+                      <div className="text-[9px] text-red-500 font-bold">
+                        -{rejectedQty} Rej
+                      </div>
+                    )}
+                  </td>
+                  <td className="py-2 px-2 text-right border-r border-slate-200">
+                    {formatCurrency(unitPrice)}
+                  </td>
+
+                  {/* ORIGINAL PO COLUMN */}
+                  <td className="py-2 px-2 text-right border-r border-slate-200 bg-slate-50 text-slate-500">
+                    <span className={isRejected ? "line-through" : ""}>
+                      {formatCurrency(originalAmount)}
+                    </span>
+                  </td>
+
+                  {/* FIX: LINE TOTAL COLUMN USES CALCULATED NET AMOUNT */}
+                  <td className="py-2 px-2 text-right font-bold text-slate-900">
+                    {formatCurrency(netAmount)}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
-      {/* --- TOTALS SECTION (UPDATED) --- */}
+      {/* --- TOTALS SECTION --- */}
       <div className="flex justify-end mb-8">
-        <div className="w-1/3">
+        <div className="w-5/12">
           {/* Subtotal */}
-          <div className="flex justify-between py-1 px-2">
-            <span className="font-bold">Subtotal:</span>
-            <span className="font-semibold">{formatCurrency(subTotal)}</span>
+          <div className="flex justify-between py-1 px-2 border-b border-slate-100">
+            <span className="font-semibold text-slate-600">
+              Subtotal (Net):
+            </span>
+            <span className="font-semibold">
+              {/* FIX: Calculate subtotal based on Net Amounts, NOT item.lineTotal */}
+              {formatCurrency(
+                po.purchaseOrderLineItems.reduce((acc, item) => {
+                  const qty = item.orderedQuantity || item.quantity || 0;
+                  const rej = item.rejectedQuantity || 0;
+                  const price = item.unitPrice || 0;
+                  return acc + (qty - rej) * price;
+                }, 0),
+              )}
+            </span>
           </div>
 
-          {/* Shipping */}
-          <div className="flex justify-between py-1 px-2">
-            <span className="font-bold">Shipping:</span>
+          <div className="flex justify-between py-1 px-2 border-b border-slate-100">
+            <span className="font-semibold text-slate-600">Shipping:</span>
             <span>{formatCurrency(po.shippingCost)}</span>
           </div>
-
-          {/* VAT */}
-          <div className="flex justify-between py-1 px-2">
-            <span className="font-bold">VAT:</span>
+          <div className="flex justify-between py-1 px-2 border-b border-slate-100">
+            <span className="font-semibold text-slate-600">VAT:</span>
             <span>+{formatCurrency(po.vat)}</span>
           </div>
-
-          {/* EWT */}
-          <div className="flex justify-between py-1 px-2 border-b border-slate-300 pb-2">
-            <span className="font-bold">EWT:</span>
-            <span>-{formatCurrency(po.ewt)}</span>
+          <div className="flex justify-between py-1 px-2 border-b border-slate-100">
+            <span className="font-semibold text-slate-600">EWT:</span>
+            <span className="text-slate-800">-{formatCurrency(po.ewt)}</span>
           </div>
 
-          {/* Grand Total */}
-          <div className="flex justify-between py-2 px-2 border-t-2 border-slate-800 bg-slate-50 mt-1">
-            <span className="font-bold text-sm">Grand Total:</span>
-            <span className="font-bold text-sm">
+          {/* Rejection Summary Block */}
+          {hasRejections && (
+            <div className="my-2 py-2 px-2 bg-red-50 border border-red-100 rounded">
+              <div className="flex justify-between text-slate-500 text-xs mb-1">
+                <span>Total Original Amount:</span>
+                <span className="line-through">
+                  {formatCurrency(originalTotalData.total)}
+                </span>
+              </div>
+              <div className="flex justify-between text-red-600 text-xs font-bold">
+                <span>Total Rejected Deduction:</span>
+                <span>-{formatCurrency(totalRejectedValue)}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Final Grand Total */}
+          <div className="flex justify-between py-3 px-3 bg-blue-50 border border-blue-100 mt-1 rounded-sm">
+            <span className="font-bold text-base text-blue-900">
+              Grand Total:
+            </span>
+            <span className="font-bold text-base text-blue-900">
               {formatCurrency(po.grandTotal)}
             </span>
           </div>
         </div>
       </div>
 
-      {/* --- FOOTER / TERMS & SIGNATURE --- */}
+      {/* --- FOOTER (Keep as is) --- */}
       <div className="flex justify-between items-end mt-auto pt-8 border-t border-slate-200">
         <div className="w-3/5 text-[10px] text-slate-600">
           <p className="font-bold mb-1 text-slate-800">Terms and conditions:</p>
@@ -233,7 +303,10 @@ const PrintPurchaseOrder = React.forwardRef(({ po }, ref) => {
             </li>
           </ol>
           {po.internalNotes && (
-            <p className="mt-2 text-slate-500">Note: {po.internalNotes}</p>
+            <div className="mt-2 text-slate-600 border border-slate-200 bg-slate-50 p-2 rounded">
+              <span className="font-bold">Internal Note:</span>{" "}
+              {po.internalNotes}
+            </div>
           )}
         </div>
 

@@ -449,33 +449,41 @@ const AllSalesQuotations = () => {
                         <td className="px-6 py-4 text-right font-medium text-slate-900">
                           {formatCurrency(item.totalAmount)}
                         </td>
+
+                        {/* --- UPDATED ACTIONS COLUMN --- */}
                         <td className="px-6 py-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
+                          <div className="flex items-center justify-end gap-3">
+                            {/* 1. PRIMARY ACTION: GENERATE SO (New Design) */}
                             {!isLocked && (
                               <button
                                 onClick={() => openOrderModal(item)}
-                                title="Convert"
-                                className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-[11px] font-bold uppercase rounded hover:bg-indigo-700 transition-all shadow-sm hover:shadow-md whitespace-nowrap"
                               >
-                                <ShoppingCart size={18} />
+                                <ShoppingCart size={14} />
+                                Generate SO
                               </button>
                             )}
-                            <button
-                              onClick={() => handlePrintClick(item)}
-                              title="Print"
-                              className="p-2 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded"
-                            >
-                              <Printer size={18} />
-                            </button>
-                            {!isLocked && (
+
+                            {/* 2. SECONDARY ACTIONS (Icons) */}
+                            <div className="flex items-center gap-1">
                               <button
-                                onClick={() => cancelQuotation(item.id)}
-                                title="Cancel"
-                                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
+                                onClick={() => handlePrintClick(item)}
+                                title="Print"
+                                className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
                               >
-                                <XCircle size={18} />
+                                <Printer size={18} />
                               </button>
-                            )}
+
+                              {!isLocked && (
+                                <button
+                                  onClick={() => cancelQuotation(item.id)}
+                                  title="Cancel"
+                                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                >
+                                  <XCircle size={18} />
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </td>
                       </tr>
