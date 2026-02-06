@@ -15,7 +15,7 @@ import {
   RotateCcw,
   MapPin,
   User,
-  Info,
+  Info, // Added Info icon
   AlertTriangle,
   FileText,
   Layers,
@@ -25,6 +25,8 @@ import {
   ArrowRight,
   TrendingDown,
   CornerDownRight,
+  Clock, // Added Clock icon
+  Lock, // Added Lock icon
 } from "lucide-react";
 
 import Loader from "../../../loader/Loader";
@@ -33,6 +35,101 @@ import { domain } from "../../../../security";
 import RevertTransactionModal from "../../Transactions/Modals/RevertTransactionModal";
 import RejectItemModal from "../../PurchaseOrder/PurchaseOrderModule/RejectItemModal";
 import ExchangeModal from "./ExchangeModal";
+
+// --- NEW HOOK: Get Online Time with Fallback ---
+const useOnlineTime = () => {
+  const [currentTime, setCurrentTime] = useState(null);
+  const [isOnlineTime, setIsOnlineTime] = useState(false);
+
+  useEffect(() => {
+    const fetchTime = async () => {
+      try {
+        // Attempt to get accurate online time
+        const response = await axios.get("https://worldtimeapi.org/api/ip", {
+          timeout: 3000, // 3 second timeout
+        });
+        const onlineDate = new Date(response.data.datetime);
+        setCurrentTime(onlineDate);
+        setIsOnlineTime(true);
+      } catch (error) {
+        // Fallback to PC Clock if offline or API fails
+        console.warn(
+          "Could not fetch online time, falling back to system clock.",
+        );
+        setCurrentTime(new Date());
+        setIsOnlineTime(false);
+      }
+    };
+
+    fetchTime();
+  }, []);
+
+  return { currentTime, isOnlineTime };
+};
+
+// --- NEW COMPONENT: Time Restriction Wrapper ---
+const TimeRestrictedWrapper = ({ deliveryDate, children }) => {
+  const { currentTime } = useOnlineTime();
+  const [isExpired, setIsExpired] = useState(false);
+  const [timeLeft, setTimeLeft] = useState("");
+
+  useEffect(() => {
+    if (!currentTime || !deliveryDate) return;
+
+    const deliveryTime = new Date(deliveryDate).getTime();
+    const nowTime = currentTime.getTime();
+    const twentyFourHours = 24 * 60 * 60 * 1000;
+    const diff = nowTime - deliveryTime;
+
+    if (diff > twentyFourHours) {
+      setIsExpired(true);
+    } else {
+      setIsExpired(false);
+      const remaining = twentyFourHours - diff;
+      const hours = Math.floor(remaining / (1000 * 60 * 60));
+      setTimeLeft(`${hours} hrs left`);
+    }
+  }, [currentTime, deliveryDate]);
+
+  if (!currentTime) {
+    return <span className="text-[10px] text-slate-300">Checking time...</span>;
+  }
+
+  // 🔒 EXPIRED (tooltip on THIS button only)
+  if (isExpired) {
+    return (
+      <span className="relative inline-flex">
+        <span className="group cursor-not-allowed opacity-50 grayscale inline-flex">
+          <span className="pointer-events-none">{children}</span>
+
+          {/* Tooltip */}
+          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 pointer-events-none">
+            <span className="w-24 bg-slate-800 text-white text-[9px] text-center py-1 rounded flex flex-col items-center gap-1">
+              <Lock size={10} />
+              <span>Time Exceeded (&gt;24h)</span>
+            </span>
+            <span className="block mx-auto w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-slate-800" />
+          </span>
+        </span>
+      </span>
+    );
+  }
+
+  // ✅ ACTIVE
+  return (
+    <span className="relative inline-flex">
+      <span className="group inline-flex">
+        {children}
+
+        {timeLeft && (
+          <span className="absolute -top-2 -right-2 bg-emerald-100 text-emerald-700 text-[8px] font-bold px-1 rounded-full border border-emerald-200 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
+            {timeLeft}
+          </span>
+        )}
+      </span>
+    </span>
+  );
+};
 
 // --- Helpers ---
 const cleanName = (name) => {
@@ -76,19 +173,30 @@ const ProductRowItem = ({
   isVoid,
   onRefund,
   onReplace,
+  deliveryDate,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
 
-  // Stats
+  // 1. STATS
   const originalQty = originalItem.quantityExpected;
   const netQty = originalItem.quantityReceived;
-  const returnedQty = originalQty - netQty;
+
+  // 2. REPLACEMENT QUANTITY
+  const replacedQty = replacementItem ? replacementItem.quantityReceived : 0;
+
+  // 3. PURE RETURNED QUANTITY (The fix)
+  // Total Missing (Original - Net) minus the ones that were Replaced
+  const pureReturnedQty = originalQty - netQty - replacedQty;
+
+  // 4. VISUALS
   const hasReplacement = !!replacementItem;
+  const hasReturn = pureReturnedQty > 0; // Only show red section if there's a real refund
+  const showDropdown = hasReplacement || hasReturn;
+
   const isComplimentary = originalItem.productName.includes("(COMPLIMENTARY)");
 
-  // Financials
-  const refundAmount =
-    returnedQty > 0 ? returnedQty * originalItem.unitPrice : 0;
+  // 5. FINANCIALS (Now uses pureReturnedQty)
+  const refundAmount = pureReturnedQty * originalItem.unitPrice;
 
   return (
     <>
@@ -100,20 +208,19 @@ const ProductRowItem = ({
       >
         <td className="py-3 px-4">
           <div className="flex items-center gap-3">
-            {/* Toggle Button */}
-            {hasReplacement ? (
+            {showDropdown ? (
               <button
                 onClick={() => setIsOpen(!isOpen)}
                 className={`p-1 rounded-full border transition-all ${
                   isOpen
-                    ? "bg-blue-100 border-blue-200 text-blue-600 rotate-180"
+                    ? "bg-slate-200 border-slate-300 text-slate-600 rotate-180"
                     : "bg-white border-slate-200 text-slate-400 hover:text-blue-500 hover:border-blue-300"
                 }`}
               >
                 <ChevronDown size={14} />
               </button>
             ) : (
-              <div className="w-6" /> // Spacer
+              <div className="w-6" />
             )}
 
             <div>
@@ -127,141 +234,145 @@ const ProductRowItem = ({
                 <span className="text-[10px] text-slate-400 font-semibold uppercase">
                   {originalItem.priceType || "Standard"}
                 </span>
-                {isComplimentary && (
-                  <span className="text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold uppercase border border-purple-200">
-                    Free Gift
-                  </span>
-                )}
               </div>
             </div>
           </div>
         </td>
 
-        {/* Original Qty */}
         <td className="py-3 px-2 text-center text-slate-400 font-medium">
           {originalQty || "-"}
         </td>
 
-        {/* RETURNED STATUS (Red Badge) */}
+        {/* RETURNED STATUS (Shows actual refunded units) */}
         <td className="py-3 px-2 text-center">
-          {returnedQty > 0 ? (
-            <span className="inline-flex items-center gap-1 px-2 py-1  text-red-600  text-[10px] font-bold uppercase whitespace-nowrap">
-              <RotateCcw size={10} /> {returnedQty} Returned
+          {pureReturnedQty > 0 ? (
+            <span
+              onClick={() => setIsOpen(!isOpen)}
+              className="cursor-pointer inline-flex items-center gap-1 px-2 py-1 text-red-600 text-[10px] font-bold uppercase whitespace-nowrap hover:bg-red-50 rounded"
+            >
+              <RotateCcw size={10} /> {pureReturnedQty} Returned
             </span>
           ) : (
             <span className="text-slate-200">-</span>
           )}
         </td>
 
-        {/* REPLACED STATUS (Blue Badge - Clickable) */}
+        {/* REPLACED STATUS */}
         <td className="py-3 px-2 text-center">
           {hasReplacement ? (
             <span
               onClick={() => setIsOpen(!isOpen)}
-              className="inline-flex items-center gap-1 px-2 py-1  text-blue-600  text-[10px] font-bold uppercase whitespace-nowrap "
+              className="cursor-pointer inline-flex items-center gap-1 px-2 py-1 text-blue-600 text-[10px] font-bold uppercase whitespace-nowrap hover:bg-blue-50 rounded"
             >
-              <RefreshCw size={10} /> {replacementItem.quantityReceived}{" "}
-              Replaced
+              <RefreshCw size={10} /> {replacedQty} Replaced
             </span>
           ) : (
             <span className="text-slate-200">-</span>
           )}
         </td>
 
-        {/* Net Qty */}
         <td className="py-3 px-2 text-center font-bold text-emerald-600">
           <span className="bg-emerald-50 px-2 py-1 rounded">{netQty}</span>
         </td>
 
-        {/* Price */}
         <td className="py-3 px-4 text-right font-medium text-slate-600">
           ₱{originalItem.unitPrice.toLocaleString()}
-          {originalItem.unitPrice === 0 && (
-            <span className="block text-[8px] text-purple-500 font-black uppercase">
-              Free
-            </span>
-          )}
-          {refundAmount > 0 && (
-            <div className="text-[9px] text-red-400 mt-0.5">
-              - ₱{refundAmount.toLocaleString()} (Ref)
-            </div>
-          )}
         </td>
 
-        {/* Actions */}
         <td className="py-3 px-4 text-center">
           {!isVoid && netQty > 0 && originalItem.unitPrice > 0 && (
             <div className="flex justify-center gap-1 ">
-              <button
-                onClick={onRefund}
-                className="group inline-flex items-center gap-1 px-2 py-1.5 bg-white border border-slate-300 text-slate-600 text-[10px] font-bold uppercase rounded hover:border-red-300 hover:text-red-500 transition-all shadow-sm"
-                title="Refund / Return"
-              >
-                <RotateCcw
-                  size={12}
-                  className="group-hover:-rotate-90 transition-transform"
-                />{" "}
-                Return
-              </button>
-              <button
-                onClick={onReplace}
-                className="group inline-flex items-center gap-1 px-2 py-1.5 bg-indigo-50 text-indigo-500 border border-indigo-100 text-[10px] font-bold uppercase rounded hover:bg-indigo-100 transition-all shadow-sm"
-                title="Replace / Exchange"
-              >
-                <RefreshCw
-                  size={12}
-                  className="group-hover:rotate-180 transition-transform"
-                />{" "}
-                Replace
-              </button>
+              <TimeRestrictedWrapper deliveryDate={deliveryDate}>
+                <button
+                  onClick={onRefund}
+                  className="inline-flex items-center gap-1 px-2 py-1.5 bg-white border border-slate-300 text-slate-600 text-[10px] font-bold uppercase rounded hover:border-red-300 hover:text-red-500 transition-all shadow-sm"
+                >
+                  <RotateCcw size={12} /> Return
+                </button>
+              </TimeRestrictedWrapper>
+
+              <TimeRestrictedWrapper deliveryDate={deliveryDate}>
+                <button
+                  onClick={onReplace}
+                  className="inline-flex items-center gap-1 px-2 py-1.5 bg-indigo-50 text-indigo-500 border border-indigo-100 text-[10px] font-bold uppercase rounded hover:bg-indigo-100 transition-all shadow-sm"
+                >
+                  <RefreshCw size={12} /> Replace
+                </button>
+              </TimeRestrictedWrapper>
             </div>
           )}
         </td>
       </tr>
 
-      {/* CHILD ROW (Replacement Details) */}
-      {isOpen && hasReplacement && (
+      {/* DROPDOWN ROW */}
+      {isOpen && showDropdown && (
         <tr className="bg-slate-50/50 border-b border-slate-200 animate-in fade-in slide-in-from-top-2 duration-300">
           <td colSpan="7" className="px-4 py-3 pl-14">
-            <div className="flex items-center gap-4 p-3 bg-white border border-slate-200 rounded-lg shadow-sm relative overflow-hidden max-w-4xl">
-              {/* Blue accent bar */}
-              <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>
+            <div className="flex flex-col gap-2">
+              {/* 1. RETURN SECTION (RED) */}
+              {hasReturn && (
+                <div className="flex items-center gap-4 p-3 bg-red-50/50 border border-red-100 rounded-lg shadow-sm relative overflow-hidden max-w-4xl">
+                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-400"></div>
+                  <div className="flex items-center justify-center w-8 h-8 bg-red-100 text-red-500 rounded-full shrink-0">
+                    <RotateCcw size={16} />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-[9px] font-black uppercase text-red-500 tracking-wider">
+                      Items Returned (Refunded)
+                    </div>
+                    <div className="font-bold text-slate-800 text-sm">
+                      {cleanName(originalItem.productName)}
+                    </div>
+                  </div>
+                  <div className="text-right px-6 border-l border-red-200">
+                    <div className="text-[9px] text-red-400 uppercase font-bold">
+                      Total Returned
+                    </div>
+                    <div className="font-bold text-red-600 text-lg leading-none">
+                      {pureReturnedQty} <span className="text-xs">Units</span>
+                    </div>
+                  </div>
+                  <div className="text-right px-6 border-l border-red-200">
+                    <div className="text-[9px] text-red-400 uppercase font-bold">
+                      Refund Amount
+                    </div>
+                    <div className="font-bold text-red-600 text-lg leading-none">
+                      ₱{refundAmount.toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+              )}
 
-              <div className="flex items-center justify-center w-8 h-8 bg-blue-50 text-blue-500 rounded-full shrink-0">
-                <CheckCircle size={16} />
-              </div>
-
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-[9px] font-black uppercase text-blue-500 tracking-wider">
-                    Replacement Unit Sent
-                  </span>
-                  <span className="text-[9px] text-slate-400 px-1.5 py-0.5 bg-slate-100 rounded font-mono">
-                    ID: {replacementItem.id}
-                  </span>
+              {/* 2. REPLACEMENT SECTION (BLUE) */}
+              {hasReplacement && (
+                <div className="flex items-center gap-4 p-3 bg-white border border-slate-200 rounded-lg shadow-sm relative overflow-hidden max-w-4xl">
+                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>
+                  <div className="flex items-center justify-center w-8 h-8 bg-blue-50 text-blue-500 rounded-full shrink-0">
+                    <CheckCircle size={16} />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-[9px] font-black uppercase text-blue-500 tracking-wider">
+                        Replacement Unit Sent
+                      </span>
+                      <span className="text-[9px] text-slate-400 px-1.5 py-0.5 bg-slate-100 rounded font-mono">
+                        ID: {replacementItem.id}
+                      </span>
+                    </div>
+                    <div className="font-bold text-slate-800 text-sm">
+                      {cleanName(replacementItem.productName)}
+                    </div>
+                  </div>
+                  <div className="text-right px-6 border-l border-slate-100">
+                    <div className="text-[9px] text-slate-400 uppercase font-bold">
+                      Quantity
+                    </div>
+                    <div className="font-bold text-blue-600 text-lg leading-none">
+                      {replacedQty}
+                    </div>
+                  </div>
                 </div>
-                <div className="font-bold text-slate-800 text-sm">
-                  {cleanName(replacementItem.productName)}
-                </div>
-              </div>
-
-              <div className="text-right px-6 border-l border-slate-100">
-                <div className="text-[9px] text-slate-400 uppercase font-bold">
-                  Quantity
-                </div>
-                <div className="font-bold text-blue-600 text-lg leading-none">
-                  {replacementItem.quantityReceived}
-                </div>
-              </div>
-
-              <div className="text-right px-6 border-l border-slate-100">
-                <div className="text-[9px] text-slate-400 uppercase font-bold">
-                  Cost
-                </div>
-                <div className="font-bold text-slate-800 leading-none">
-                  ₱{replacementItem.unitPrice.toLocaleString()}
-                </div>
-              </div>
+              )}
             </div>
           </td>
         </tr>
@@ -324,19 +435,23 @@ const AllDeliveryReturns = () => {
   // --- Filtering Logic ---
   const filteredDOs = useMemo(() => {
     return doData.filter((item) => {
+      // DEFENSIVE PROGRAMMING: Ensure strings exist before calling .toLowerCase()
+      const term = searchTerm.toLowerCase();
+      const doNum = item.deliveryOrderNumber || "";
+      const soNum = item.salesOrderNumber || "";
+      const custName = item.customerName || "";
+
       // Search
       const matchesSearch =
-        item.deliveryOrderNumber
-          .toLowerCase()
-          .includes(searchTerm.toLowerCase()) ||
-        item.salesOrderNumber
-          ?.toLowerCase()
-          .includes(searchTerm.toLowerCase()) ||
-        item.customerName?.toLowerCase().includes(searchTerm.toLowerCase());
+        doNum.toLowerCase().includes(term) ||
+        soNum.toLowerCase().includes(term) ||
+        custName.toLowerCase().includes(term);
 
       // Location
+      // Handle potential null locationName safely
       const matchesLoc =
-        selectedLocation === "All" || item.locationName === selectedLocation;
+        selectedLocation === "All" ||
+        (item.locationName && item.locationName === selectedLocation);
 
       // Tabs
       let matchesTab = true;
@@ -575,6 +690,18 @@ const AllDeliveryReturns = () => {
           })}
         </div>
 
+        <div className="flex items-start gap-2 mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">
+          <Clock size={14} className="text-amber-600 mt-0.5" />
+          <p className="text-[11px] font-semibold text-amber-800 leading-snug">
+            <span className="font-bold">
+              Delivery Returns are strictly based on the Expected Delivery Date.
+            </span>
+            <br />
+            Return and exchange actions are allowed within
+            <span className="font-bold"> twenty-four (24) hours only.</span>
+          </p>
+        </div>
+
         {/* --- SEARCH & LOCATION FILTER --- */}
         <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6 flex flex-col md:flex-row gap-4">
           <div className="relative flex-1">
@@ -596,7 +723,7 @@ const AllDeliveryReturns = () => {
             >
               <option value="All">All Locations</option>
               {[...new Set(doData.map((d) => d.locationName))]
-                .filter(Boolean)
+                ?.filter(Boolean)
                 .map((loc) => (
                   <option key={loc} value={loc}>
                     {loc}
@@ -648,6 +775,13 @@ const AllDeliveryReturns = () => {
                           <td className="px-6 py-4">
                             <div className="font-bold text-slate-800">
                               {item.deliveryOrderNumber}
+                              {/* Show delivery date */}
+                              <div className="text-[10px] text-slate-500 font-normal mt-0.5 flex items-center gap-1">
+                                <Clock size={10} />
+                                {new Date(
+                                  item.deliveryDate,
+                                ).toLocaleDateString()}
+                              </div>
                             </div>
                             <div className="flex gap-2 mt-1">
                               <span className="text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-bold uppercase border border-blue-100">
@@ -692,6 +826,8 @@ const AllDeliveryReturns = () => {
                           >
                             <div className="flex justify-center gap-3">
                               {!item.isVoid && (
+                                // ALSO APPLY TIME RESTRICTION TO VOID WHOLE ORDER IF NEEDED
+                                // For now, just wrapping the buttons inside
                                 <button
                                   onClick={() => {
                                     setSelectedDOToRevert(item);
@@ -785,6 +921,7 @@ const AllDeliveryReturns = () => {
                                                   replacementItem
                                                 }
                                                 isVoid={item.isVoid}
+                                                deliveryDate={item.deliveryDate} // Pass delivery date here
                                                 onRefund={() => {
                                                   setIsProcessingSingleItem(
                                                     true,
@@ -811,6 +948,7 @@ const AllDeliveryReturns = () => {
 
                                 {/* RIGHT: SUMMARY CARD */}
                                 <div className="lg:col-span-1 bg-slate-50 p-6 flex flex-col justify-between">
+                                  {/* ... existing summary code ... */}
                                   <div>
                                     <h4 className="text-xs font-black uppercase text-slate-400 border-b border-slate-200 pb-2 mb-4 flex items-center gap-2">
                                       <FileText size={16} /> Summary
