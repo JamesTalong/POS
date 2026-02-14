@@ -64,11 +64,6 @@ const Admin = () => {
         Icon: FaChartBar,
         permissionKey: "dashboard",
       },
-      {
-        title: "Playground",
-        path: "Playground",
-        Icon: FaChartBar,
-      },
 
       {
         title: "Product Setup",
@@ -160,17 +155,17 @@ const Admin = () => {
       {
         title: "Returns",
         Icon: FaArchive,
-        permissionKey: "sales",
+        permissionKey: "returns",
         dropdown: [
           {
             title: "Delivery Returns",
             path: "DeliveryReturns",
-            permissionKey: "deliveryOrders",
+            permissionKey: "deliveryReturns",
           },
           {
             title: "Trade Returns",
-            path: "DeliveryOrders",
-            permissionKey: "deliveryOrders",
+            path: "TradeReturns",
+            permissionKey: "tradeReturns",
           },
         ],
       },
@@ -196,16 +191,20 @@ const Admin = () => {
         Icon: FaArchive,
         permissionKey: "inventory",
         dropdown: [
-          { title: "Inventory", path: "inventory", permissionKey: "inventory" },
+          {
+            title: "Inventory Dashboard",
+            path: "inventory",
+            permissionKey: "inventoryDashboard",
+          },
           {
             title: "Item Details",
             path: "InventoryCost",
-            permissionKey: "inventoryCost",
+            permissionKey: "itemDetails",
           },
           {
             title: "Physical Inventory",
             path: "InventoryOverride",
-            permissionKey: "inventoryCost",
+            permissionKey: "physicalInventory",
           },
           {
             title: "Transfer",
@@ -226,7 +225,7 @@ const Admin = () => {
             permissionKey: "userRestriction",
           },
           { title: "Employees", path: "employees", permissionKey: "employees" },
-          { title: "Approvers", path: "approvers", permissionKey: "employees" },
+          { title: "Approvers", path: "approvers", permissionKey: "approvers" },
         ],
       },
 
