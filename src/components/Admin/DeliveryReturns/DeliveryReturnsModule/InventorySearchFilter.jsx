@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
-import { Search, X, Package } from "lucide-react";
+import { Search, X, Package, Loader2 } from "lucide-react"; // Added Loader2
 
 const InventorySearchFilter = ({
   data,
@@ -7,13 +7,15 @@ const InventorySearchFilter = ({
   onSelect,
   disabled,
   placeholder,
+  isLoading, // New prop for loading state
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [isSearchActive, setIsSearchActive] = useState(false);
   const wrapperRef = useRef(null);
 
   const filteredData = useMemo(() => {
-    if (disabled || !data) return [];
+    if (disabled || !data || isLoading) return [];
+
     // Only show items with stock > 0
     const availableItems = data.filter((p) => {
       const stockInfo = inventoryMap[p.id];
@@ -28,7 +30,7 @@ const InventorySearchFilter = ({
         p.productName.toLowerCase().includes(lowerTerm) ||
         (p.itemCode && p.itemCode.toLowerCase().includes(lowerTerm)),
     );
-  }, [data, inventoryMap, searchTerm, disabled]);
+  }, [data, inventoryMap, searchTerm, disabled, isLoading]);
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -45,6 +47,19 @@ const InventorySearchFilter = ({
     setSearchTerm("");
     setIsSearchActive(false);
   };
+
+  // 1. Loading State Display
+  if (isLoading) {
+    return (
+      <div className="w-full animate-pulse">
+        <div className="h-3 w-24 bg-gray-200 rounded mb-2"></div>
+        <div className="h-10 w-full bg-gray-100 border border-gray-200 rounded-lg flex items-center px-3">
+          <Loader2 className="h-4 w-4 text-gray-400 animate-spin mr-2" />
+          <div className="h-3 w-32 bg-gray-200 rounded"></div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full relative" ref={wrapperRef}>
@@ -78,8 +93,10 @@ const InventorySearchFilter = ({
             <X className="h-4 w-4" />
           </button>
         )}
+
+        {/* 2. Z-INDEX FIX: Added z-[100] to ensure it sits above modal overlays */}
         {isSearchActive && !disabled && (
-          <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+          <div className="absolute z-[100] mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-2xl max-h-60 overflow-y-auto">
             {filteredData.length > 0 ? (
               <ul className="divide-y divide-gray-100">
                 {filteredData.map((p) => {
@@ -88,7 +105,7 @@ const InventorySearchFilter = ({
                     <li
                       key={p.id}
                       onClick={() => handleSelectItem(p)}
-                      className="flex justify-between items-center px-4 py-3 text-sm text-gray-800 hover:bg-gray-50 cursor-pointer"
+                      className="flex justify-between items-center px-4 py-3 text-sm text-gray-800 hover:bg-emerald-50 cursor-pointer transition-colors"
                     >
                       <div className="flex items-center gap-3">
                         <div className="p-1.5 bg-gray-100 rounded text-gray-500">

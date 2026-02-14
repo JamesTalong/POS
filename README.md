@@ -27,8 +27,6 @@ The application will open at `http://localhost:3000` by default.
 npm run build
 ```
 
-### Optional: Stripe Payment Server
-
 If you're using payment functionality:
 
 ```bash
@@ -113,19 +111,16 @@ Warehouse Management System/
 ### Typical User Journey
 
 1. **Initialization**
-
    - `index.js` mounts the React app with Redux store and routing
    - Redux Persist rehydrates app state from localStorage
    - Auth context loads user session if available
 
 2. **Navigation**
-
    - `App.js` defines all routes and main layout
    - Protected routes use `security.jsx` guards to verify authentication
    - Navigation between admin modules and settings
 
 3. **Data Operations**
-
    - Components call custom hooks (e.g., `useGetData.js`) to fetch data
    - Actions dispatch Redux actions via `IchthusSlice.js`
    - State updates trigger component re-renders
@@ -235,7 +230,6 @@ npm run eject
    ```
 
 2. **Add a New Admin Module**
-
    - Create folder under `src/components/Admin/ModuleName/`
    - Create module component and sub-components
    - Add Redux slice if state needed
@@ -243,7 +237,6 @@ npm run eject
    - Add navigation link
 
 3. **Component Structure**
-
    - Module container component
    - Feature-specific sub-components
    - Module dialog/modal for CRUD operations

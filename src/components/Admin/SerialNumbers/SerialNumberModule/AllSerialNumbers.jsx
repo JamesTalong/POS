@@ -321,8 +321,14 @@ const AllSerialNumbers = () => {
                           </span>
                         )}
                       </td>
-                      <td className="px-6 py-4 font-medium text-slate-800">
-                        {item.productName}
+                      <td className="px-6 py-4">
+                        <div className="font-medium text-slate-800">
+                          {item.productName}
+                        </div>
+
+                        <div className="text-[10px] text-slate-500 ">
+                          ID: {item.id}
+                        </div>
                       </td>
                       <td className="px-6 py-4 text-xs">
                         <span className="bg-slate-100 px-2 py-1 rounded border border-slate-200 font-mono text-slate-600">

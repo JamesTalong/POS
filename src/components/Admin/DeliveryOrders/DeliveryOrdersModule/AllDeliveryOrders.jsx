@@ -116,7 +116,7 @@ const AllDeliveryOrders = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-12 relative">
+    <div className="min-h-screen bg-gray-100 pb-12 relative">
       <ToastContainer autoClose={2000} position="top-right" />
 
       {/* --- HEADER --- */}

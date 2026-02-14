@@ -358,6 +358,12 @@ const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
       lineItem.productName = selectedOption.label.split(" - ")[0];
       lineItem.unitOfMeasureId = selectedOption.unitOfMeasureId || "";
 
+      if (!selectedOption.unitOfMeasureId) {
+        toast.warning(
+          `For "${lineItem.productName}": Please complete your product details, the UOM is essential to complete this transaction.`,
+        );
+      }
+
       let priceToUse = selectedOption.unitPrice || 0;
       let recPrice = 0;
 
@@ -921,16 +927,13 @@ const AddPurchaseOrder = ({ onClose, refreshData, poToEdit }) => {
                   <label htmlFor="currency" className={labelStyles}>
                     Currency
                   </label>
-                  <select
+                  <input
                     id="currency"
-                    value={formData.currency}
-                    onChange={handleHeaderChange}
-                    className={inputStyles}
-                  >
-                    <option>PHP</option>
-                    <option>USD</option>
-                    <option>EUR</option>
-                  </select>
+                    type="text"
+                    value="PHP"
+                    disabled
+                    className={readOnlyInputStyles}
+                  />
                 </div>
               </div>
             </div>

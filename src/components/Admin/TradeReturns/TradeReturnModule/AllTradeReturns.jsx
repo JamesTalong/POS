@@ -15,7 +15,7 @@ import {
   RotateCcw,
   MapPin,
   User,
-  Info,
+  Info, // Added Info icon
   AlertTriangle,
   FileText,
   Layers,
@@ -25,9 +25,10 @@ import {
   ArrowRight,
   TrendingDown,
   CornerDownRight,
-  Clock,
+  Clock, // Added Clock icon
   Lock,
-  RefreshCcw, // Ensure this is imported for the Reset icon
+  RefreshCcw,
+  LockIcon, // Added Lock icon
 } from "lucide-react";
 
 import Loader from "../../../loader/Loader";
@@ -35,7 +36,7 @@ import Pagination from "../../Pagination";
 import { domain } from "../../../../security";
 import RevertTransactionModal from "../../Transactions/Modals/RevertTransactionModal";
 import RejectItemModal from "../../PurchaseOrder/PurchaseOrderModule/RejectItemModal";
-import ExchangeModal from "./ExchangeModal"; // Ensure path is correct
+import ExchangeModal from "../../DeliveryReturns/DeliveryReturnsModule/ExchangeModal";
 
 // --- NEW HOOK: Get Online Time with Fallback ---
 const useOnlineTime = () => {
@@ -68,7 +69,8 @@ const useOnlineTime = () => {
   return { currentTime, isOnlineTime };
 };
 
-// --- TIME RESTRICTION WRAPPER (24 HOURS) ---
+// --- NEW COMPONENT: Time Restriction Wrapper ---
+// --- NEW COMPONENT: Time Restriction Wrapper ---
 const TimeRestrictedWrapper = ({ deliveryDate, children }) => {
   const { currentTime } = useOnlineTime();
   const [isExpired, setIsExpired] = useState(false);
@@ -80,22 +82,26 @@ const TimeRestrictedWrapper = ({ deliveryDate, children }) => {
     const deliveryTime = new Date(deliveryDate).getTime();
     const nowTime = currentTime.getTime();
 
-    // --- 24 HOUR LOGIC APPLIED HERE ---
-    const twentyFourHours = 24 * 60 * 60 * 1000;
+    // CHANGE: 24 hours -> 7 days
+    const sevenDays = 7 * 24 * 60 * 60 * 1000;
     const diff = nowTime - deliveryTime;
 
-    if (diff > twentyFourHours) {
+    if (diff > sevenDays) {
       setIsExpired(true);
     } else {
       setIsExpired(false);
-      const remaining = twentyFourHours - diff;
-      const hours = Math.floor(remaining / (1000 * 60 * 60));
-      // Display hours left
-      if (hours > 0) {
-        setTimeLeft(`${hours}h left`);
+      const remaining = sevenDays - diff;
+
+      // Improved display: Show days and hours
+      const days = Math.floor(remaining / (1000 * 60 * 60 * 24));
+      const hours = Math.floor(
+        (remaining % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60),
+      );
+
+      if (days > 0) {
+        setTimeLeft(`${days}d ${hours}h left`);
       } else {
-        const minutes = Math.floor(remaining / (1000 * 60));
-        setTimeLeft(`${minutes}m left`);
+        setTimeLeft(`${hours}h left`);
       }
     }
   }, [currentTime, deliveryDate]);
@@ -104,7 +110,6 @@ const TimeRestrictedWrapper = ({ deliveryDate, children }) => {
     return <span className="text-[10px] text-slate-300">Checking time...</span>;
   }
 
-  // 🔒 EXPIRED
   if (isExpired) {
     return (
       <span className="relative inline-flex">
@@ -113,9 +118,10 @@ const TimeRestrictedWrapper = ({ deliveryDate, children }) => {
 
           {/* Tooltip */}
           <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 pointer-events-none">
-            <span className="w-24 bg-slate-800 text-white text-[9px] text-center py-1 rounded flex flex-col items-center gap-1 px-2">
+            <span className="w-28 bg-slate-800 text-white text-[9px] text-center py-1 rounded flex flex-col items-center gap-1 px-2">
               <Lock size={10} />
-              <span>Time Exceeded (&gt;24h)</span>
+              {/* CHANGE: Update Tooltip Text */}
+              <span>Time Exceeded (&gt;7 days)</span>
             </span>
             <span className="block mx-auto w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-slate-800" />
           </span>
@@ -124,7 +130,7 @@ const TimeRestrictedWrapper = ({ deliveryDate, children }) => {
     );
   }
 
-  // ✅ ACTIVE
+  // ✅ ACTIVE (rest of the component remains same)
   return (
     <span className="relative inline-flex">
       <span className="group inline-flex">
@@ -181,8 +187,8 @@ const ProductRowItem = ({
   isVoid,
   onRefund,
   onReplace,
-  onReset, // Added missing prop
-  hasDebitMemo, // Added missing prop
+  onReset, // New prop
+  hasDebitMemo, // New prop
   deliveryDate,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -194,17 +200,18 @@ const ProductRowItem = ({
   // 2. REPLACEMENT QUANTITY
   const replacedQty = replacementItem ? replacementItem.quantityReceived : 0;
 
-  // 3. PURE RETURNED QUANTITY
+  // 3. PURE RETURNED QUANTITY (The fix)
+  // Total Missing (Original - Net) minus the ones that were Replaced
   const pureReturnedQty = originalQty - netQty - replacedQty;
 
   // 4. VISUALS
   const hasReplacement = !!replacementItem;
-  const hasReturn = pureReturnedQty > 0;
+  const hasReturn = pureReturnedQty > 0; // Only show red section if there's a real refund
   const showDropdown = hasReplacement || hasReturn;
 
   const isComplimentary = originalItem.productName.includes("(COMPLIMENTARY)");
 
-  // 5. FINANCIALS
+  // 5. FINANCIALS (Now uses pureReturnedQty)
   const refundAmount = pureReturnedQty * originalItem.unitPrice;
 
   return (
@@ -252,7 +259,7 @@ const ProductRowItem = ({
           {originalQty || "-"}
         </td>
 
-        {/* RETURNED STATUS */}
+        {/* RETURNED STATUS (Shows actual refunded units) */}
         <td className="py-3 px-2 text-center">
           {pureReturnedQty > 0 ? (
             <span
@@ -318,24 +325,21 @@ const ProductRowItem = ({
         <tr className="bg-slate-50/50 border-b border-slate-200 animate-in fade-in slide-in-from-top-2 duration-300">
           <td colSpan="7" className="px-4 py-3 pl-14">
             <div className="flex flex-col gap-2">
-              {/* --- RESTORED: RESET ITEM BUTTON --- */}
               <div className="flex items-center justify-end">
                 <button
-                  onClick={() => onReset(originalItem.id)}
+                  onClick={() => onReset(originalItem.id)} // Pass the ID up
                   disabled={hasDebitMemo}
                   className={`inline-flex items-center gap-1 px-2 py-1.5 border rounded text-[10px] font-bold uppercase transition-all shadow-sm
-                    ${
-                      hasDebitMemo
-                        ? "bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200"
-                        : "bg-white border-slate-300 text-slate-600 hover:border-red-300 hover:text-red-500"
-                    }`}
+    ${
+      hasDebitMemo
+        ? "bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200"
+        : "bg-white border-slate-300 text-slate-600 hover:border-red-300 hover:text-red-500"
+    }`}
                 >
                   {hasDebitMemo ? <Lock size={12} /> : <RefreshCcw size={12} />}
                   Reset Item
                 </button>
               </div>
-
-              {/* 1. RETURN SECTION (RED) */}
               {hasReturn && (
                 <div className="flex items-center gap-4 p-3 bg-red-50/50 border border-red-100 rounded-lg shadow-sm relative overflow-hidden max-w-4xl">
                   <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-400"></div>
@@ -368,7 +372,6 @@ const ProductRowItem = ({
                   </div>
                 </div>
               )}
-
               {/* 2. REPLACEMENT SECTION (BLUE) */}
               {hasReplacement && (
                 <div className="flex items-center gap-4 p-3 bg-white border border-slate-200 rounded-lg shadow-sm relative overflow-hidden max-w-4xl">
@@ -408,7 +411,7 @@ const ProductRowItem = ({
 };
 
 // --- MAIN COMPONENT ---
-const AllDeliveryReturns = () => {
+const AllTradeReturns = () => {
   // 1. GET CURRENT USER ID FROM REDUX
   const currentUserId = useSelector(selectUserID);
 
@@ -437,13 +440,14 @@ const AllDeliveryReturns = () => {
 
   // 2. Exchange / Complimentary
   const [isExchangeModalOpen, setIsExchangeModalOpen] = useState(false);
-  const [exchangeMode, setExchangeMode] = useState("REPLACE");
-  const [exchangeTargetDO, setExchangeTargetDO] = useState(null);
-  const [exchangeTargetItem, setExchangeTargetItem] = useState(null);
+  const [exchangeMode, setExchangeMode] = useState("REPLACE"); // "REPLACE" or "COMPLIMENTARY"
+  const [exchangeTargetDO, setExchangeTargetDO] = useState(null); // The Order Header
+  const [exchangeTargetItem, setExchangeTargetItem] = useState(null); // The specific item being replaced (null if complimentary)
 
   // Fetch Data
   const fetchData = useCallback(async () => {
     try {
+      // Intentionally silent loading on refresh to not flicker UI too much
       const response = await axios.get(`${domain}/api/DeliveryOrders`);
       setDoData(response.data);
       setLoading(false);
@@ -460,20 +464,25 @@ const AllDeliveryReturns = () => {
   // --- Filtering Logic ---
   const filteredDOs = useMemo(() => {
     return doData.filter((item) => {
+      // DEFENSIVE PROGRAMMING: Ensure strings exist before calling .toLowerCase()
       const term = searchTerm.toLowerCase();
       const doNum = item.deliveryOrderNumber || "";
       const soNum = item.salesOrderNumber || "";
       const custName = item.customerName || "";
 
+      // Search
       const matchesSearch =
         doNum.toLowerCase().includes(term) ||
         soNum.toLowerCase().includes(term) ||
         custName.toLowerCase().includes(term);
 
+      // Location
+      // Handle potential null locationName safely
       const matchesLoc =
         selectedLocation === "All" ||
         (item.locationName && item.locationName === selectedLocation);
 
+      // Tabs
       let matchesTab = true;
       if (activeTab === "Sold") matchesTab = !item.isVoid;
       else if (activeTab === "Voided") matchesTab = item.isVoid;
@@ -482,7 +491,7 @@ const AllDeliveryReturns = () => {
     });
   }, [searchTerm, doData, selectedLocation, activeTab]);
 
-  // --- RESTORED HANDLERS (Reset & Lock) ---
+  // --- Handlers ---
 
   const handleResetAll = async (doId) => {
     if (
@@ -500,7 +509,7 @@ const AllDeliveryReturns = () => {
       toast.error(error.response?.data?.message || "Reset All failed");
     }
   };
-
+  // Function to toggle the Debit Memo (Lock)
   const handleLockOrder = async (id) => {
     if (
       !window.confirm(
@@ -518,6 +527,7 @@ const AllDeliveryReturns = () => {
     }
   };
 
+  // Reset Item Function
   const handleResetItem = async (doId, itemId) => {
     if (
       !window.confirm(
@@ -537,11 +547,11 @@ const AllDeliveryReturns = () => {
       toast.error(error.response?.data?.message || "Reset failed");
     }
   };
-
   // 1. REVERT / REFUND HANDLER
   const handleConfirmRevert = async (id, returnCondition) => {
     try {
       if (isProcessingSingleItem) {
+        // Handle Single Item Return
         let finalImage = null;
         if (pendingRejectData.image) {
           finalImage = pendingRejectData.image.includes(",")
@@ -562,6 +572,7 @@ const AllDeliveryReturns = () => {
         await axios.post(`${domain}/api/DeliveryOrders/revert-item`, payload);
         toast.success("Item returned and refunded successfully.");
       } else {
+        // Handle Whole Order Void
         const payload = {
           returnCondition,
           voidBy: String(currentUserId),
@@ -572,12 +583,13 @@ const AllDeliveryReturns = () => {
 
       setIsRevertModalOpen(false);
       setPendingRejectData(null);
-      fetchData();
+      fetchData(); // Refresh data to update financials
     } catch (error) {
       toast.error(error.response?.data?.message || "Process failed.");
     }
   };
 
+  // 2. EXCHANGE / COMPLIMENTARY SETUP HANDLERS
   const openReplaceModal = (doHeader, itemLine) => {
     setExchangeTargetDO(doHeader);
     setExchangeTargetItem(itemLine);
@@ -587,7 +599,7 @@ const AllDeliveryReturns = () => {
 
   const openComplimentaryModal = (doHeader) => {
     setExchangeTargetDO(doHeader);
-    setExchangeTargetItem(null);
+    setExchangeTargetItem(null); // No specific item to replace
     setExchangeMode("COMPLIMENTARY");
     setIsExchangeModalOpen(true);
   };
@@ -603,17 +615,20 @@ const AllDeliveryReturns = () => {
       <ToastContainer autoClose={2000} position="top-right" />
 
       {/* --- MODALS --- */}
+
+      {/* 1. Item Condition Modal (Good/Bad) + Qty */}
       <RejectItemModal
         isOpen={isRejectItemModalOpen}
         onClose={() => setIsRejectItemModalOpen(false)}
         onSubmit={(qty, reason, img) => {
           setPendingRejectData({ quantity: qty, reason, image: img });
           setIsRejectItemModalOpen(false);
-          setIsRevertModalOpen(true);
+          setIsRevertModalOpen(true); // Open confirmation modal next
         }}
         lineItem={selectedItemToReject}
       />
 
+      {/* 2. Confirm Revert/Void */}
       <RevertTransactionModal
         isOpen={isRevertModalOpen}
         onClose={() => setIsRevertModalOpen(false)}
@@ -625,6 +640,7 @@ const AllDeliveryReturns = () => {
         }
       />
 
+      {/* 3. Exchange / Complimentary Modal */}
       <ExchangeModal
         isOpen={isExchangeModalOpen}
         onClose={() => setIsExchangeModalOpen(false)}
@@ -633,7 +649,7 @@ const AllDeliveryReturns = () => {
         deliveryOrder={exchangeTargetDO}
         currentUserId={currentUserId}
         onSuccess={() => {
-          fetchData();
+          fetchData(); // Refresh to show new items and updated totals
         }}
       />
 
@@ -643,7 +659,7 @@ const AllDeliveryReturns = () => {
           <div className="flex justify-between items-center">
             <div>
               <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                <Truck className="text-emerald-600" /> Delivery Returns
+                <Truck className="text-emerald-600" /> Trade Returns Management
               </h1>
               <p className="text-xs text-slate-400 font-mono mt-1">
                 Dynamic Order Management • User ID: {currentUserId}
@@ -764,7 +780,8 @@ const AllDeliveryReturns = () => {
             </span>
             <br />
             Return and exchange actions are allowed within
-            <span className="font-bold"> twenty-four (24) hours only.</span>
+            {/* CHANGE: Update Banner Text */}
+            <span className="font-bold"> seven (7) days only.</span>
           </p>
         </div>
 
@@ -886,8 +903,6 @@ const AllDeliveryReturns = () => {
                           <td className="px-6 py-4 text-center">
                             {getStatusBadge(item.isVoid ? "Voided" : "Sold")}
                           </td>
-
-                          {/* --- RESTORED: LOCK / DEBIT MEMO BUTTON --- */}
                           <td
                             className="px-6 py-4 text-center"
                             onClick={(e) => e.stopPropagation()}
@@ -897,11 +912,11 @@ const AllDeliveryReturns = () => {
                                 onClick={() => handleLockOrder(item.id)}
                                 disabled={item.hasDebitMemo} // Disable if already locked
                                 className={`flex items-center gap-1.5 px-3 py-2 rounded font-bold text-[10px] uppercase transition-all border
-                                  ${
-                                    item.hasDebitMemo
-                                      ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                                      : "bg-orange-50 text-orange-600 border-orange-200 hover:bg-orange-100"
-                                  }`}
+        ${
+          item.hasDebitMemo
+            ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+            : "bg-orange-50 text-orange-600 border-orange-200 hover:bg-orange-100"
+        }`}
                                 title={
                                   item.hasDebitMemo ? "Locked" : "Lock Order"
                                 }
@@ -917,6 +932,28 @@ const AllDeliveryReturns = () => {
                               </button>
                             </div>
                           </td>
+                          {/* <td
+                            className="px-6 py-4 text-center"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div className="flex justify-center gap-3">
+                              {!item.isVoid && (
+                                // ALSO APPLY TIME RESTRICTION TO VOID WHOLE ORDER IF NEEDED
+                                // For now, just wrapping the buttons inside
+                                <button
+                                  onClick={() => {
+                                    setSelectedDOToRevert(item);
+                                    setIsProcessingSingleItem(false);
+                                    setIsRevertModalOpen(true);
+                                  }}
+                                  className="p-2 bg-orange-50 text-orange-600 rounded hover:bg-orange-100 border border-orange-100 transition-colors"
+                                  title="Void Whole Order"
+                                >
+                                  <Ban size={16} />
+                                </button>
+                              )}
+                            </div>
+                          </td> */}
                         </tr>
 
                         {/* --- EXPANDED VIEW --- */}
@@ -931,7 +968,7 @@ const AllDeliveryReturns = () => {
                                       <Package size={16} /> Product Line Items
                                     </h4>
                                     <div className="flex gap-2">
-                                      {/* --- RESTORED: RESET ALL BUTTON --- */}
+                                      {/* NEW RESET ALL BUTTON */}
                                       {!item.isVoid && (
                                         <button
                                           onClick={() =>
@@ -939,18 +976,18 @@ const AllDeliveryReturns = () => {
                                           }
                                           disabled={item.hasDebitMemo}
                                           className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] uppercase font-bold rounded-lg border transition-all
-                                          ${
-                                            item.hasDebitMemo
-                                              ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
-                                              : "bg-red-50 text-red-700 border-red-100 hover:bg-red-100"
-                                          }`}
+          ${
+            item.hasDebitMemo
+              ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+              : "bg-red-50 text-red-700 border-red-100 hover:bg-red-100"
+          }`}
                                         >
                                           <RefreshCcw size={14} /> Reset All
                                           Items
                                         </button>
                                       )}
 
-                                      {/* COMPLIMENTARY BUTTON (Header Action) */}
+                                      {/* EXISTING COMPLIMENTARY BUTTON */}
                                       {!item.isVoid && (
                                         <button
                                           onClick={() =>
@@ -1018,20 +1055,19 @@ const AllDeliveryReturns = () => {
                                             return (
                                               <ProductRowItem
                                                 key={prod.id}
-                                                originalItem={prod}
-                                                replacementItem={
-                                                  replacementItem
-                                                }
-                                                isVoid={item.isVoid}
-                                                deliveryDate={item.deliveryDate}
-                                                // --- RESTORED PROPS ---
-                                                hasDebitMemo={item.hasDebitMemo}
+                                                hasDebitMemo={item.hasDebitMemo} // Pass from parent DO
                                                 onReset={(originalItemId) =>
                                                   handleResetItem(
                                                     item.id,
                                                     originalItemId,
                                                   )
+                                                } // Pass handler
+                                                originalItem={prod}
+                                                replacementItem={
+                                                  replacementItem
                                                 }
+                                                isVoid={item.isVoid}
+                                                deliveryDate={item.deliveryDate} // Pass delivery date here
                                                 onRefund={() => {
                                                   setIsProcessingSingleItem(
                                                     true,
@@ -1182,4 +1218,4 @@ const AllDeliveryReturns = () => {
   );
 };
 
-export default AllDeliveryReturns;
+export default AllTradeReturns;

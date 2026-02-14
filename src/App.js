@@ -54,8 +54,9 @@ import DeliveryOrders from "./components/Admin/DeliveryOrders/DeliveryOrders";
 import InventoryOverride from "./components/Admin/InventoryOverride/InventoryOverride";
 import Approvers from "./components/Admin/Approvers/Approvers";
 import DeliveryReturns from "./components/Admin/DeliveryReturns/DeliveryReturns";
-import Playground from "./components/Admin/Playground/Playground";
+
 import WelcomingPage from "./components/Admin/WelcomingPage/WelcomingPage";
+import TradeReturns from "./components/Admin/TradeReturns/TradeReturns";
 
 const App = () => {
   const router = createBrowserRouter(
@@ -82,8 +83,9 @@ const App = () => {
             path="PurchasePriceHistories"
             element={<PurchasePriceHistories />}
           />
-          <Route path="Playground" element={<Playground />} />
+
           <Route path="WelcomingPage" element={<WelcomingPage />} />
+          <Route path="TradeReturns" element={<TradeReturns />} />
           <Route path="DeliveryReturns" element={<DeliveryReturns />} />
           <Route path="InventoryOverride" element={<InventoryOverride />} />
           <Route path="DeliveryOrders" element={<DeliveryOrders />} />

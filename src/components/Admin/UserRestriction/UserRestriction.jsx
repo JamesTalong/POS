@@ -20,15 +20,56 @@ import AddRestriction from "./AddRestriction";
 import Pagination from "../Pagination";
 import { domain } from "../../../security";
 
+// --- 1. Define the known permissions structure here (Same as AddRestriction) ---
+const KNOWN_PERMISSIONS = [
+  { title: "Dashboard", key: "dashboard" },
+  { title: "Help & FAQ", key: "helpFaq" },
+  { title: "Product Setup Access", key: "productSetup" },
+  { title: "Inventory Status", key: "inventoryStatus" },
+  { title: "Unit Of Measurement", key: "unitOfMeasurement" },
+  { title: "Categories", key: "categories" },
+  { title: "Categories 2", key: "categories2" },
+  { title: "Categories 3", key: "categories3" },
+  { title: "Categories 4", key: "categories4" },
+  { title: "Categories 5", key: "categories5" },
+  { title: "Brands", key: "brands" },
+  { title: "Pricelists", key: "pricelists" },
+  { title: "Procurement Access", key: "procurement" },
+  { title: "Purchase Orders", key: "purchaseOrders" },
+  { title: "Goods Receipts", key: "goodsReceipts" },
+  { title: "Sales Access", key: "sales" },
+  { title: "Sales Quotations", key: "salesQuotations" },
+  { title: "Sales Orders", key: "salesOrders" },
+  { title: "Delivery Orders", key: "deliveryOrders" },
+  { title: "Returns Access", key: "returns" },
+  { title: "Delivery Returns", key: "deliveryReturns" },
+  { title: "Trade Returns", key: "tradeReturns" },
+  { title: "Prices Access", key: "prices" },
+  { title: "Selling Price Histories", key: "sellingPriceHistories" },
+  { title: "Purchase Price Histories", key: "purchasePriceHistories" },
+  { title: "Inventory Access", key: "inventory" },
+  { title: "Inventory Dashboard", key: "inventoryDashboard" },
+  { title: "Item Details", key: "itemDetails" },
+  { title: "Physical Inventory", key: "physicalInventory" },
+  { title: "Transfer Items", key: "transferItems" },
+  { title: "Staff Access Control", key: "staffAccess" },
+  { title: "Users", key: "users" },
+  { title: "User Restrictions", key: "userRestriction" },
+  { title: "Employees", key: "employees" },
+  { title: "Approvers", key: "approvers" },
+  { title: "Back Tracking Access", key: "backTracking" },
+  { title: "Stock Entry (Batches)", key: "batches" },
+  { title: "Serial Numbers", key: "serialNumbers" },
+  { title: "Locations", key: "locations" },
+  { title: "Products", key: "productList" },
+  { title: "Customers", key: "customers" },
+  { title: "Vendors", key: "vendors" },
+  { title: "Transactions", key: "transactions" },
+  { title: "POS", key: "pos" },
+];
+
 // Mobile Card Component
-const RoleCard = ({
-  role,
-  expanded,
-  onToggle,
-  onEdit,
-  onDelete,
-  accessKeys,
-}) => (
+const RoleCard = ({ role, expanded, onToggle, onEdit, onDelete }) => (
   <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
     <div className="flex justify-between items-center mb-3">
       <div className="flex items-center gap-3">
@@ -53,22 +94,25 @@ const RoleCard = ({
           Permissions
         </h4>
         <div className="grid grid-cols-2 gap-2">
-          {accessKeys.map((key) => (
+          {/* --- 2. Use KNOWN_PERMISSIONS instead of accessKeys --- */}
+          {KNOWN_PERMISSIONS.map((perm) => (
             <div
-              key={key}
+              key={perm.key}
               className="flex items-center gap-2 text-xs font-medium"
             >
-              {role[key] ? (
+              {role[perm.key] ? (
                 <CheckCircle2 size={14} className="text-emerald-500" />
               ) : (
                 <XCircle size={14} className="text-slate-300" />
               )}
               <span
                 className={
-                  role[key] ? "text-slate-700" : "text-slate-400 line-through"
+                  role[perm.key]
+                    ? "text-slate-700"
+                    : "text-slate-400 line-through"
                 }
               >
-                {key.replace(/([A-Z])/g, " $1").trim()}
+                {perm.title}
               </span>
             </div>
           ))}
@@ -128,7 +172,7 @@ const UserRestriction = () => {
   const handleDelete = async (id) => {
     if (
       !window.confirm(
-        "Are you sure you want to delete this role and its permissions?"
+        "Are you sure you want to delete this role and its permissions?",
       )
     )
       return;
@@ -149,19 +193,15 @@ const UserRestriction = () => {
   };
 
   const filteredRoles = jobRoles.filter((role) =>
-    role.roleName.toLowerCase().includes(searchTerm.toLowerCase())
+    role.roleName.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
-  const accessKeys =
-    jobRoles.length > 0
-      ? Object.keys(jobRoles[0]).filter(
-          (key) => key !== "id" && key !== "roleName"
-        )
-      : [];
+  // --- 3. Removed the dynamic accessKeys calculation ---
+  // We use KNOWN_PERMISSIONS now to ensure nothing is missing.
 
   const paginatedRoles = filteredRoles.slice(
     (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
+    currentPage * itemsPerPage,
   );
 
   return (
@@ -292,12 +332,13 @@ const UserRestriction = () => {
                             className="px-6 py-6 bg-slate-50 border-y border-slate-100"
                           >
                             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                              {accessKeys.map((key) => (
+                              {/* --- 4. Loop through KNOWN_PERMISSIONS --- */}
+                              {KNOWN_PERMISSIONS.map((perm) => (
                                 <div
-                                  key={key}
+                                  key={perm.key}
                                   className="flex items-center gap-3 bg-white p-2 rounded border border-slate-200 shadow-sm"
                                 >
-                                  {role[key] ? (
+                                  {role[perm.key] ? (
                                     <CheckCircle2
                                       size={18}
                                       className="text-emerald-500"
@@ -310,12 +351,12 @@ const UserRestriction = () => {
                                   )}
                                   <span
                                     className={`text-sm font-medium ${
-                                      role[key]
+                                      role[perm.key]
                                         ? "text-slate-700"
                                         : "text-slate-400 line-through"
                                     }`}
                                   >
-                                    {key.replace(/([A-Z])/g, " $1").trim()}
+                                    {perm.title}
                                   </span>
                                 </div>
                               ))}
@@ -345,7 +386,7 @@ const UserRestriction = () => {
                 <RoleCard
                   key={role.id}
                   role={role}
-                  accessKeys={accessKeys}
+                  // accessKeys removed, logic moved inside Component
                   expanded={expandedRows[role.id]}
                   onToggle={() => toggleExpand(role.id)}
                   onEdit={handleEdit}

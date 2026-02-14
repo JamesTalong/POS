@@ -46,6 +46,14 @@ const MenuStructure = [
     ],
   },
   {
+    category: "Returns",
+    permissions: [
+      { title: "Returns Access", permissionKey: "returns" },
+      { title: "Delivery Returns", permissionKey: "deliveryReturns" },
+      { title: "Trade Returns", permissionKey: "tradeReturns" },
+    ],
+  },
+  {
     category: "Prices",
     permissions: [
       { title: "Prices Access", permissionKey: "prices" },
@@ -63,7 +71,9 @@ const MenuStructure = [
     category: "Inventory",
     permissions: [
       { title: "Inventory Access", permissionKey: "inventory" },
-      { title: "Inventory Cost", permissionKey: "inventoryCost" },
+      { title: "Inventory Dashboard", permissionKey: "inventoryDashboard" },
+      { title: "Item Details", permissionKey: "itemDetails" },
+      { title: "Physical Inventory", permissionKey: "physicalInventory" },
       { title: "Transfer Items", permissionKey: "transferItems" },
     ],
   },
@@ -74,6 +84,7 @@ const MenuStructure = [
       { title: "Users", permissionKey: "users" },
       { title: "User Restrictions", permissionKey: "userRestriction" },
       { title: "Employees", permissionKey: "employees" },
+      { title: "Approvers", permissionKey: "approvers" },
     ],
   },
   {
@@ -127,7 +138,7 @@ const AddRestriction = ({ isOpen, setIsOpen, refreshData, jobRoleToEdit }) => {
     return MenuStructure.map((group) => ({
       ...group,
       permissions: group.permissions.filter((p) =>
-        p.title.toLowerCase().includes(searchQuery.toLowerCase())
+        p.title.toLowerCase().includes(searchQuery.toLowerCase()),
       ),
     })).filter((group) => group.permissions.length > 0);
   }, [searchQuery]);
@@ -146,7 +157,7 @@ const AddRestriction = ({ isOpen, setIsOpen, refreshData, jobRoleToEdit }) => {
       MenuStructure.find((item) => item.category === category)?.permissions ||
       [];
     const allChecked = categoryPermissions.every(
-      (perm) => permissions[perm.permissionKey]
+      (perm) => permissions[perm.permissionKey],
     );
     const updated = { ...permissions };
     categoryPermissions.forEach((perm) => {
@@ -265,7 +276,7 @@ const AddRestriction = ({ isOpen, setIsOpen, refreshData, jobRoleToEdit }) => {
               {filteredMenu.map((group, groupIdx) => {
                 const categoryPerms = group.permissions;
                 const activeCount = categoryPerms.filter(
-                  (p) => permissions[p.permissionKey]
+                  (p) => permissions[p.permissionKey],
                 ).length;
                 const isAllSelected =
                   activeCount === categoryPerms.length &&

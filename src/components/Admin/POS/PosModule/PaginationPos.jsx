@@ -33,27 +33,27 @@ const PaginationPos = ({
   const dispatch = useDispatch();
   const posProducts = useSelector((state) => state.orebiReducer.posProducts);
   const refreshProducts = useSelector(
-    (state) => state.orebiReducer.refreshProducts
+    (state) => state.orebiReducer.refreshProducts,
   );
 
   // Redux Filters
   const checkedBrands = useSelector(
-    (state) => state.orebiReducer.checkedBrands
+    (state) => state.orebiReducer.checkedBrands,
   );
   const checkedCategories = useSelector(
-    (state) => state.orebiReducer.checkedCategories
+    (state) => state.orebiReducer.checkedCategories,
   );
   const checkedCategoriesTwo = useSelector(
-    (state) => state.orebiReducer.checkedCategoriesTwo
+    (state) => state.orebiReducer.checkedCategoriesTwo,
   );
   const checkedCategoriesThree = useSelector(
-    (state) => state.orebiReducer.checkedCategoriesThree
+    (state) => state.orebiReducer.checkedCategoriesThree,
   );
   const checkedCategoriesFour = useSelector(
-    (state) => state.orebiReducer.checkedCategoriesFour
+    (state) => state.orebiReducer.checkedCategoriesFour,
   );
   const checkedCategoriesFive = useSelector(
-    (state) => state.orebiReducer.checkedCategoriesFive
+    (state) => state.orebiReducer.checkedCategoriesFive,
   );
 
   const openImageModal = (imageUrl) => setSelectedImage(imageUrl);
@@ -81,15 +81,10 @@ const PaginationPos = ({
     setIsLoading(true);
     try {
       const response = await axios.get(
-        `${domain}/api/Products/pos-pricelist-by-location?locationId=${selectedLocationId}`
+        `${domain}/api/Products/pos-pricelist-by-location?locationId=${selectedLocationId}`,
       );
       const formattedPricelists = response.data.map((item) => ({
         ...item,
-        productImage: item.productImage
-          ? item.productImage.startsWith("http")
-            ? item.productImage
-            : `data:image/jpeg;base64,${item.productImage}`
-          : profile,
       }));
       setPricelists(formattedPricelists);
     } catch (error) {
@@ -153,7 +148,7 @@ const PaginationPos = ({
     const newLocationId = Number(e.target.value);
     if (posProducts.length > 0) {
       toast.error(
-        "Cannot change location while items are in POS. Please clear POS first."
+        "Cannot change location while items are in POS. Please clear POS first.",
       );
       return;
     }
@@ -168,7 +163,7 @@ const PaginationPos = ({
     const selectedPriceType = e.target.value;
     if (posProducts.length > 0) {
       toast.error(
-        "Cannot change price type while items are in POS. Please clear POS first."
+        "Cannot change price type while items are in POS. Please clear POS first.",
       );
       return;
     }
@@ -222,13 +217,13 @@ const PaginationPos = ({
       }
       acc[item.productId].push(item);
       return acc;
-    }, {})
+    }, {}),
   );
 
   const pageCount = Math.ceil(groupedProducts.length / itemsPerPage);
   const currentGroups = groupedProducts.slice(
     itemOffset,
-    itemOffset + itemsPerPage
+    itemOffset + itemsPerPage,
   );
 
   const handlePageClick = (event) => {
@@ -269,7 +264,7 @@ const PaginationPos = ({
         }
 
         const existingItem = posProducts.find(
-          (posItem) => posItem.id === item.uniqueId
+          (posItem) => posItem.id === item.uniqueId,
         );
 
         if (existingItem) {
@@ -281,13 +276,13 @@ const PaginationPos = ({
           setExistingLocation({
             id: item.locationId,
             location: item.locationName,
-          })
+          }),
         );
         dispatch(
           addToPos({
             id: item.uniqueId,
             ItemCode: item.itemCode,
-            image: item.productImage,
+
             name: item.productName,
             productId: item.productId,
             quantity: 1,
@@ -301,14 +296,14 @@ const PaginationPos = ({
             uomId: item.uomId,
             priceTypeLabel: item.priceType,
             conversionRate: item.conversionRate,
-          })
+          }),
         );
       } catch (error) {
         console.error(error);
         toast.error("An error occurred while adding the item.");
       }
     },
-    [posProducts, priceType, dispatch]
+    [posProducts, priceType, dispatch],
   );
 
   // 7. Search Logic
@@ -327,14 +322,14 @@ const PaginationPos = ({
               (item.itemCode &&
                 item.itemCode.toLowerCase().includes(query.toLowerCase())) ||
               (item.productName &&
-                item.productName.toLowerCase().includes(query.toLowerCase())))
+                item.productName.toLowerCase().includes(query.toLowerCase()))),
         );
         setFilteredProducts(results);
       } else {
         setFilteredProducts([]);
       }
     },
-    [pricelists]
+    [pricelists],
   );
 
   const handleSearchKeyDown = (e) => {
@@ -417,12 +412,6 @@ const PaginationPos = ({
                   PROMO
                 </p>
               )}
-              <img
-                src={activeItem.productImage}
-                alt={activeItem.productName}
-                className="w-full h-full object-cover rounded-md border border-gray-200"
-                onClick={() => openImageModal(activeItem.productImage)}
-              />
             </div>
 
             <div className="flex flex-col justify-between min-w-0 flex-grow">
@@ -491,12 +480,6 @@ const PaginationPos = ({
       >
         <td className="py-3 px-4 text-xs text-left">
           <div className="flex items-center gap-3">
-            <img
-              src={activeItem.productImage}
-              alt={activeItem.productName}
-              className="w-10 h-10 object-cover rounded-md border border-gray-200 cursor-pointer hover:border-gray-400 transition-colors"
-              onClick={() => openImageModal(activeItem.productImage)}
-            />
             <div>
               <p className="font-medium text-gray-900">
                 {activeItem.productName}

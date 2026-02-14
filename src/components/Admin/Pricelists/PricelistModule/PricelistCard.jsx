@@ -11,9 +11,9 @@ import {
 import noImage from "../../../../Images/noImage.jpg";
 
 const formatCurrency = (amount) =>
-  new Intl.NumberFormat("en-US", {
+  new Intl.NumberFormat("en-PH", {
     style: "currency",
-    currency: "USD",
+    currency: "PHP",
   }).format(amount);
 
 const PricelistCard = ({ pricelist, onEdit, onDelete }) => {
