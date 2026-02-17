@@ -54,8 +54,6 @@ const PrintPurchaseOrder = React.forwardRef(({ po }, ref) => {
       ref={ref}
       className="bg-white p-8 w-full max-w-[210mm] mx-auto text-slate-800 text-xs font-sans leading-tight"
     >
-      {/* ... HEADER, INFO BLOCK, ADDRESSES ... (Keep these the same) */}
-
       {/* --- HEADER --- */}
       <div className="flex justify-between items-end mb-6">
         <div>
@@ -130,18 +128,46 @@ const PrintPurchaseOrder = React.forwardRef(({ po }, ref) => {
         <div className="w-1/2 px-4 border-l border-blue-400">Ship To:</div>
       </div>
 
+      {/* --- UPDATED BILL TO / SHIP TO SECTION --- */}
       <div className="flex mb-6 border-b border-l border-r border-slate-200">
         <div className="w-1/2 p-4 border-r border-slate-200">
-          <p className="text-slate-400 italic">
-            (Billing address not provided)
-          </p>
+          {/* Logic: Check if vendorDetails exists and has content */}
+          {po.vendorDetails &&
+          (po.vendorDetails.vendorName ||
+            po.vendorDetails.address ||
+            po.vendorDetails.contactPerson) ? (
+            <div className="text-slate-700 text-[11px] leading-snug space-y-0.5">
+              {po.vendorDetails.vendorName && (
+                <p className="font-semibold text-slate-900 text-xs tracking-wide">
+                  {po.vendorDetails.vendorName}
+                </p>
+              )}
+
+              {po.vendorDetails.address && (
+                <p className="text-slate-600 break-words">
+                  {po.vendorDetails.address}
+                </p>
+              )}
+
+              {po.vendorDetails.contactPerson && (
+                <p className="text-slate-600">
+                  <span className="font-medium text-slate-700">Attn:</span>{" "}
+                  {po.vendorDetails.contactPerson}
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-slate-400 italic text-[11px]">
+              (Billing address not provided)
+            </p>
+          )}
         </div>
         <div className="w-1/2 p-4">
           <p className="font-bold mb-1">{po.location}</p>
         </div>
       </div>
 
-      {/* --- ITEMS TABLE (FIXED LOGIC) --- */}
+      {/* --- ITEMS TABLE --- */}
       <div className="mb-2">
         <table className="w-full text-left border-collapse">
           <thead>
@@ -171,10 +197,7 @@ const PrintPurchaseOrder = React.forwardRef(({ po }, ref) => {
               const unitPrice = item.unitPrice || 0;
 
               const originalAmount = orderedQty * unitPrice;
-
-              // FIX: Calculate actual net total (Qty - Rejected) * Price
               const netAmount = (orderedQty - rejectedQty) * unitPrice;
-
               const isRejected = rejectedQty > 0;
 
               return (
@@ -203,15 +226,11 @@ const PrintPurchaseOrder = React.forwardRef(({ po }, ref) => {
                   <td className="py-2 px-2 text-right border-r border-slate-200">
                     {formatCurrency(unitPrice)}
                   </td>
-
-                  {/* ORIGINAL PO COLUMN */}
                   <td className="py-2 px-2 text-right border-r border-slate-200 bg-slate-50 text-slate-500">
                     <span className={isRejected ? "line-through" : ""}>
                       {formatCurrency(originalAmount)}
                     </span>
                   </td>
-
-                  {/* FIX: LINE TOTAL COLUMN USES CALCULATED NET AMOUNT */}
                   <td className="py-2 px-2 text-right font-bold text-slate-900">
                     {formatCurrency(netAmount)}
                   </td>
@@ -225,13 +244,11 @@ const PrintPurchaseOrder = React.forwardRef(({ po }, ref) => {
       {/* --- TOTALS SECTION --- */}
       <div className="flex justify-end mb-8">
         <div className="w-5/12">
-          {/* Subtotal */}
           <div className="flex justify-between py-1 px-2 border-b border-slate-100">
             <span className="font-semibold text-slate-600">
               Subtotal (Net):
             </span>
             <span className="font-semibold">
-              {/* FIX: Calculate subtotal based on Net Amounts, NOT item.lineTotal */}
               {formatCurrency(
                 po.purchaseOrderLineItems.reduce((acc, item) => {
                   const qty = item.orderedQuantity || item.quantity || 0;
@@ -256,7 +273,6 @@ const PrintPurchaseOrder = React.forwardRef(({ po }, ref) => {
             <span className="text-slate-800">-{formatCurrency(po.ewt)}</span>
           </div>
 
-          {/* Rejection Summary Block */}
           {hasRejections && (
             <div className="my-2 py-2 px-2 bg-red-50 border border-red-100 rounded">
               <div className="flex justify-between text-slate-500 text-xs mb-1">
@@ -272,7 +288,6 @@ const PrintPurchaseOrder = React.forwardRef(({ po }, ref) => {
             </div>
           )}
 
-          {/* Final Grand Total */}
           <div className="flex justify-between py-3 px-3 bg-blue-50 border border-blue-100 mt-1 rounded-sm">
             <span className="font-bold text-base text-blue-900">
               Grand Total:
@@ -284,7 +299,7 @@ const PrintPurchaseOrder = React.forwardRef(({ po }, ref) => {
         </div>
       </div>
 
-      {/* --- FOOTER (Keep as is) --- */}
+      {/* --- FOOTER --- */}
       <div className="flex justify-between items-end mt-auto pt-8 border-t border-slate-200">
         <div className="w-3/5 text-[10px] text-slate-600">
           <p className="font-bold mb-1 text-slate-800">Terms and conditions:</p>
